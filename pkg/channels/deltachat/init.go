@@ -7,6 +7,7 @@ import (
 )
 
 func init() {
+	config.RegisterChannelSettings(config.ChannelDeltaChat, config.DeltaChatSettings{})
 	channels.RegisterFactory(
 		config.ChannelDeltaChat,
 		func(channelName, channelType string, cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
