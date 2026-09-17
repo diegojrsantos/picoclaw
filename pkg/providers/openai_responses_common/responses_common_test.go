@@ -471,18 +471,16 @@ func TestParseResponseBody_FailedStatus(t *testing.T) {
 		"id": "resp_fail",
 		"object": "response",
 		"status": "%s",
+		"error": {"message": "model failed"},
 		"output": [],
 		"usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
 			"input_tokens_details": {"cached_tokens": 0},
 			"output_tokens_details": {"reasoning_tokens": 0}}
 	}`, string(responses.ResponseStatusFailed)))
 
-	result, err := ParseResponseBody(body)
-	if err != nil {
-		t.Fatalf("error: %v", err)
-	}
-	if result.FinishReason != "error" {
-		t.Errorf("FinishReason = %q, want %q", result.FinishReason, "error")
+	_, err := ParseResponseBody(body)
+	if err == nil || err.Error() != "model failed" {
+		t.Fatalf("error = %v, want model failed", err)
 	}
 }
 
@@ -497,12 +495,36 @@ func TestParseResponseBody_CanceledStatus(t *testing.T) {
 			"output_tokens_details": {"reasoning_tokens": 0}}
 	}`, string(responses.ResponseStatusCancelled)))
 
-	result, err := ParseResponseBody(body)
-	if err != nil {
-		t.Fatalf("error: %v", err)
+	_, err := ParseResponseBody(body)
+	if err == nil || !strings.Contains(err.Error(), "non-terminal status") {
+		t.Fatalf("error = %v, want non-terminal status error", err)
 	}
-	if result.FinishReason != "canceled" {
-		t.Errorf("FinishReason = %q, want %q", result.FinishReason, "canceled")
+}
+
+func TestParseResponseBody_IncompleteMayHaveEmptyOutput(t *testing.T) {
+	result, err := ParseResponseBody(strings.NewReader(`{
+		"status":"incomplete",
+		"output":[],
+		"incomplete_details":{"reason":"max_output_tokens"},
+		"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}
+	}`))
+	if err != nil {
+		t.Fatalf("ParseResponseBody() error = %v", err)
+	}
+	if result.FinishReason != "length" {
+		t.Fatalf("FinishReason = %q, want length", result.FinishReason)
+	}
+	if result.Usage == nil || result.Usage.TotalTokens != 15 {
+		t.Fatalf("Usage = %#v, want total 15", result.Usage)
+	}
+}
+
+func TestParseResponseBody_RejectsWrongEnvelope(t *testing.T) {
+	_, err := ParseResponseBody(strings.NewReader(`{
+		"choices":[{"message":{"content":"chat response"}}]
+	}`))
+	if err == nil || !strings.Contains(err.Error(), "unexpected or non-terminal status") {
+		t.Fatalf("error = %v, want unexpected status error", err)
 	}
 }
 

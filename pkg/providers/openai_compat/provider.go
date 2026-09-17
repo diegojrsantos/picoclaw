@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -16,6 +17,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/messageutil"
+	orc "github.com/sipeed/picoclaw/pkg/providers/openai_responses_common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -457,6 +459,60 @@ func assistantMessageEmpty(msg Message) bool {
 		strings.TrimSpace(msg.ToolCallID) == ""
 }
 
+// shouldUseResponsesAPI keeps Responses routing tied to the explicit OpenAI
+// protocol. Custom endpoints may use that protocol for unrelated compatible
+// models, so only GPT model IDs are auto-routed there.
+func (p *Provider) shouldUseResponsesAPI(model string) bool {
+	if !strings.EqualFold(strings.TrimSpace(p.providerName), "openai") {
+		return false
+	}
+	if isNativeOpenAIEndpoint(p.apiBase) {
+		return true
+	}
+	model = strings.ToLower(strings.TrimSpace(model))
+	model = strings.TrimPrefix(model, "openai/")
+	return strings.HasPrefix(model, "gpt-") && !strings.HasPrefix(model, "gpt-oss")
+}
+
+func (p *Provider) buildResponsesRequestBody(
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) map[string]any {
+	input, instructions := orc.TranslateMessages(p.prepareMessagesForRequest(messages))
+	requestBody := map[string]any{
+		"model": model,
+		"input": input,
+		// PicoClaw sends the complete retained history on every turn, so it does
+		// not rely on server-side response state.
+		"store": false,
+	}
+
+	if instructions != "" {
+		requestBody["instructions"] = instructions
+	}
+
+	nativeSearch, _ := options["native_search"].(bool)
+	nativeSearch = nativeSearch && isNativeSearchHost(p.apiBase)
+	responseTools := orc.TranslateTools(tools, nativeSearch)
+	if len(responseTools) > 0 {
+		requestBody["tools"] = responseTools
+		requestBody["tool_choice"] = "auto"
+	}
+
+	if maxTokens, ok := common.AsInt(options["max_tokens"]); ok {
+		requestBody["max_output_tokens"] = maxTokens
+	}
+	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" &&
+		supportsPromptCacheKey(p.apiBase) {
+		requestBody["prompt_cache_key"] = cacheKey
+	}
+
+	maps.Copy(requestBody, p.extraBody)
+	return requestBody
+}
+
 func (p *Provider) Chat(
 	ctx context.Context,
 	messages []Message,
@@ -468,14 +524,77 @@ func (p *Provider) Chat(
 		return nil, fmt.Errorf("API base not configured")
 	}
 
-	requestBody := p.buildRequestBody(messages, tools, model, options)
+	if p.shouldUseResponsesAPI(model) {
+		responsesModel := normalizeModel(model, p.apiBase)
+		out, err := p.chatResponses(ctx, messages, tools, responsesModel, options)
+		if err == nil {
+			return out, nil
+		}
+		if isNativeOpenAIEndpoint(p.apiBase) || !shouldFallbackToChatCompletions(err) {
+			return nil, err
+		}
 
+		logger.WarnCF(
+			"provider.openai_compat",
+			"Responses API request failed; falling back to Chat Completions",
+			map[string]any{
+				"model": responsesModel,
+				"error": err.Error(),
+			},
+		)
+		fallback, fallbackErr := p.chatCompletions(ctx, messages, tools, model, options)
+		if fallbackErr != nil {
+			return nil, fmt.Errorf(
+				"responses request failed; fallback chat/completions failed: %w",
+				errors.Join(err, fallbackErr),
+			)
+		}
+		return fallback, nil
+	}
+
+	return p.chatCompletions(ctx, messages, tools, model, options)
+}
+
+func shouldFallbackToChatCompletions(err error) bool {
+	var httpErr *common.HTTPError
+	return errors.As(err, &httpErr) &&
+		(httpErr.StatusCode == http.StatusNotFound || httpErr.StatusCode == http.StatusMethodNotAllowed)
+}
+
+func (p *Provider) chatCompletions(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (*LLMResponse, error) {
+	requestBody := p.buildRequestBody(messages, tools, model, options)
+	return p.doRequest(ctx, "/chat/completions", requestBody, nil)
+}
+
+func (p *Provider) chatResponses(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (*LLMResponse, error) {
+	requestBody := p.buildResponsesRequestBody(messages, tools, model, options)
+	return p.doRequest(ctx, "/responses", requestBody, orc.ParseResponseBody)
+}
+
+func (p *Provider) doRequest(
+	ctx context.Context,
+	path string,
+	requestBody map[string]any,
+	parse func(io.Reader) (*LLMResponse, error),
+) (*LLMResponse, error) {
 	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", p.apiBase+"/chat/completions", bytes.NewReader(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", p.apiBase+path, bytes.NewReader(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -499,6 +618,9 @@ func (p *Provider) Chat(
 		return nil, common.HandleErrorResponse(resp, p.apiBase)
 	}
 
+	if parse != nil {
+		return parse(resp.Body)
+	}
 	return common.ReadAndParseResponse(resp, p.apiBase)
 }
 
@@ -846,6 +968,10 @@ func buildToolsList(tools []ToolDefinition, nativeSearch bool) []any {
 
 func (p *Provider) SupportsNativeSearch() bool {
 	return isNativeSearchHost(p.apiBase)
+}
+
+func isNativeOpenAIEndpoint(apiBase string) bool {
+	return normalizedHostname(apiBase) == "api.openai.com"
 }
 
 // isNativeOpenAIOrAzureEndpoint reports whether the given API base points to

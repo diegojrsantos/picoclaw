@@ -19,6 +19,164 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
+func TestProviderChat_OpenAIUsesResponsesAPI(t *testing.T) {
+	var requestBody map[string]any
+	var requestPath string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestPath = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"status":"completed",
+			"output":[{"type":"message","content":[{"type":"output_text","text":"from responses"}]}],
+			"usage":{"input_tokens":12,"output_tokens":3,"total_tokens":15}
+		}`)
+	}))
+	defer server.Close()
+
+	p := NewProvider(
+		"test-key",
+		"https://api.openai.com/v1",
+		"",
+		WithProviderName("openai"),
+		WithExtraBody(map[string]any{"metadata": map[string]any{"source": "test"}}),
+	)
+	p.httpClient.Transport = roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		r.URL, _ = url.Parse(server.URL + r.URL.Path)
+		return http.DefaultTransport.RoundTrip(r)
+	})
+
+	result, err := p.Chat(
+		t.Context(),
+		[]Message{
+			{Role: "system", Content: "Be concise."},
+			{Role: "user", Content: "Hello"},
+		},
+		nil,
+		"gpt-4.1",
+		map[string]any{
+			"max_tokens":       256,
+			"temperature":      0.2,
+			"prompt_cache_key": "agent-main",
+		},
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if result.Content != "from responses" {
+		t.Fatalf("Content = %q, want from responses", result.Content)
+	}
+	if result.Usage == nil || result.Usage.TotalTokens != 15 {
+		t.Fatalf("Usage = %#v, want total 15", result.Usage)
+	}
+	if requestPath != "/v1/responses" {
+		t.Fatalf("request path = %q, want /v1/responses", requestPath)
+	}
+	if requestBody["model"] != "gpt-4.1" {
+		t.Fatalf("model = %v, want gpt-4.1", requestBody["model"])
+	}
+	if requestBody["store"] != false {
+		t.Fatalf("store = %v, want false", requestBody["store"])
+	}
+	if requestBody["instructions"] != "Be concise." {
+		t.Fatalf("instructions = %v, want Be concise.", requestBody["instructions"])
+	}
+	if _, ok := requestBody["input"]; !ok {
+		t.Fatal("Responses request is missing input")
+	}
+	if _, ok := requestBody["messages"]; ok {
+		t.Fatal("Responses request unexpectedly contains messages")
+	}
+	if requestBody["max_output_tokens"] != float64(256) {
+		t.Fatalf("max_output_tokens = %v, want 256", requestBody["max_output_tokens"])
+	}
+	if _, ok := requestBody["temperature"]; ok {
+		t.Fatalf("temperature should be omitted from Responses request, got %v", requestBody["temperature"])
+	}
+	if requestBody["prompt_cache_key"] != "agent-main" {
+		t.Fatalf("prompt_cache_key = %v, want agent-main", requestBody["prompt_cache_key"])
+	}
+	metadata, ok := requestBody["metadata"].(map[string]any)
+	if !ok || metadata["source"] != "test" {
+		t.Fatalf("metadata = %#v, want source=test", requestBody["metadata"])
+	}
+}
+
+func TestProviderChat_OpenAIFallsBackWhenResponsesUnsupported(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		switch r.URL.Path {
+		case "/responses":
+			http.Error(w, `{"error":"not supported"}`, http.StatusNotFound)
+		case "/chat/completions":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"fallback"},"finish_reason":"stop"}]}`)
+		default:
+			http.Error(w, "unexpected path", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	p := NewProvider("test-key", server.URL, "", WithProviderName("openai"))
+	result, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "Hi"}}, nil, "gpt-4o", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if result.Content != "fallback" {
+		t.Fatalf("Content = %q, want fallback", result.Content)
+	}
+	if strings.Join(paths, ",") != "/responses,/chat/completions" {
+		t.Fatalf("paths = %v, want responses then chat/completions", paths)
+	}
+}
+
+func TestProviderChat_OpenAIDoesNotFallbackOnAuthFailure(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		http.Error(w, `{"error":"invalid key"}`, http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	p := NewProvider("bad-key", server.URL, "", WithProviderName("openai"))
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "Hi"}}, nil, "gpt-4o", nil)
+	if err == nil {
+		t.Fatal("Chat() error = nil, want authentication error")
+	}
+	if len(paths) != 1 || paths[0] != "/responses" {
+		t.Fatalf("paths = %v, want only /responses", paths)
+	}
+}
+
+func TestProviderShouldUseResponsesAPI(t *testing.T) {
+	tests := []struct {
+		name         string
+		providerName string
+		apiBase      string
+		model        string
+		want         bool
+	}{
+		{"official OpenAI endpoint", "openai", "https://api.openai.com/v1", "o3", true},
+		{"OpenAI model through custom endpoint", "openai", "https://proxy.example/v1", "gpt-5.6-sol", true},
+		{"non-OpenAI compatibility model", "openai", "https://proxy.example/v1", "Qwen3.5-35B-A3B", false},
+		{"gpt-oss compatibility model", "openai", "https://proxy.example/v1", "gpt-oss-120b", false},
+		{"named compatibility provider", "openrouter", "https://proxy.example/v1", "gpt-5.6-sol", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &Provider{providerName: tt.providerName, apiBase: tt.apiBase}
+			if got := p.shouldUseResponsesAPI(tt.model); got != tt.want {
+				t.Fatalf("shouldUseResponsesAPI(%q) = %v, want %v", tt.model, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestProviderChat_UsesMaxCompletionTokensForGLM(t *testing.T) {
 	var requestBody map[string]any
 

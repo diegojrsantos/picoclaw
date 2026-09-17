@@ -1,9 +1,11 @@
 // Package openai_responses_common provides shared utilities for providers
-// that use the OpenAI Responses API (e.g., Azure, Codex).
+// that use the OpenAI Responses API (e.g., OpenAI, Azure, Codex).
 package openai_responses_common
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"strings"
 
@@ -202,12 +204,28 @@ func ParseResponseBody(body io.Reader) (*protocoltypes.LLMResponse, error) {
 		return nil, err
 	}
 
-	return parseResponse(&apiResp), nil
+	switch apiResp.Status {
+	case responses.ResponseStatusCompleted, responses.ResponseStatusIncomplete:
+		return parseResponse(&apiResp), nil
+	case responses.ResponseStatusFailed:
+		if msg := strings.TrimSpace(apiResp.Error.Message); msg != "" {
+			return nil, errors.New(msg)
+		}
+		return nil, errors.New("openai responses request failed")
+	default:
+		return nil, fmt.Errorf(
+			"openai responses returned unexpected or non-terminal status: %q",
+			apiResp.Status,
+		)
+	}
 }
 
 // ParseResponseFromStruct converts a decoded responses.Response into an LLMResponse.
 // Used by providers that receive the Response struct directly (e.g., via streaming SDK).
 func ParseResponseFromStruct(resp *responses.Response) *protocoltypes.LLMResponse {
+	if resp == nil {
+		return &protocoltypes.LLMResponse{}
+	}
 	return parseResponse(resp)
 }
 

@@ -1343,13 +1343,14 @@ func TestCreateProviderFromConfig_MinimaxPreservesUserExtraBody(t *testing.T) {
 }
 
 func TestCreateProviderFromConfig_CustomHeaders(t *testing.T) {
-	var gotSource, gotAuth string
+	var gotSource, gotAuth, gotPath string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotSource = r.Header.Get("X-Source")
 		gotAuth = r.Header.Get("Authorization")
+		gotPath = r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`))
+		_, _ = w.Write([]byte(openaiResponsesResponse))
 	}))
 	defer server.Close()
 
@@ -1383,10 +1384,16 @@ func TestCreateProviderFromConfig_CustomHeaders(t *testing.T) {
 	if gotAuth != "Token config-auth" {
 		t.Fatalf("Authorization = %q, want %q", gotAuth, "Token config-auth")
 	}
+	if gotPath != "/responses" {
+		t.Fatalf("request path = %q, want /responses", gotPath)
+	}
 }
 
 // openaiCompatResponse is the JSON response used by OpenAI-compatible providers.
 const openaiCompatResponse = `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`
+
+// openaiResponsesResponse is the JSON response used by native Responses API providers.
+const openaiResponsesResponse = `{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}]}`
 
 // anthropicResponse is the JSON response used by Anthropic providers.
 const anthropicResponse = `{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5}}`
@@ -1407,7 +1414,7 @@ func TestCreateProviderFromConfig_UserAgent(t *testing.T) {
 			name:     "openai default user agent",
 			model:    "openai/gpt-4o",
 			apiKey:   "test-key",
-			response: openaiCompatResponse,
+			response: openaiResponsesResponse,
 			wantUA:   defaultUA,
 		},
 		{
@@ -1415,7 +1422,7 @@ func TestCreateProviderFromConfig_UserAgent(t *testing.T) {
 			model:     "openai/gpt-4o",
 			apiKey:    "test-key",
 			userAgent: "MyAgent/1.2.3",
-			response:  openaiCompatResponse,
+			response:  openaiResponsesResponse,
 			wantUA:    "MyAgent/1.2.3",
 		},
 		{
@@ -1437,7 +1444,7 @@ func TestCreateProviderFromConfig_UserAgent(t *testing.T) {
 			name:     "azure default user agent",
 			model:    "azure/my-deployment",
 			apiKey:   "test-azure-key",
-			response: openaiCompatResponse,
+			response: openaiResponsesResponse,
 			wantUA:   defaultUA,
 		},
 	}
