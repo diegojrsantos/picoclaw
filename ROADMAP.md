@@ -116,7 +116,7 @@
 *The Ethereum node option explicitly includes plans for **agentic web3 operations** — staged so the risky parts (signing) only arrive after the safe parts prove out.*
 
 * **Stage 1 — Node availability → v0.10.0 Track 65**: the `nimbus-verified-proxy` module serves a verified local JSON-RPC (default :8545) for the user's own scripts and dapps. No agent tools.
-* **Stage 2 — Agentic web3 operations** (roadmap): `web3_*` agent tools over the module endpoint — chain reads (`eth_call`, balances, ENS, event logs) and contract ABI interaction; wallet/key management reusing the identity-encryption posture (keyring/passphrase); **gated signing** — transaction send behind contract/method allowlists, spending caps, and the approval-hook seam.
+* **Stage 2 — Agentic web3 operations** (in progress): `web3_*` read tools shipped — `web3_chain`, `web3_balance`, `web3_call`, `web3_block`, `web3_transaction`, `web3_logs` (range-capped) and an allowlist-gated `web3_rpc`, resolved from `tools.web3.endpoint` → `ethereum-rpc` module → running `nimbus-verified-proxy`, off by default (`tools.web3.enabled`). Remaining: wallet/key management reusing the identity-encryption posture (keyring/passphrase); **gated signing** — transaction send behind contract/method allowlists, spending caps, and the approval-hook seam.
 * **Stage 3 — Mesh settlement** (horizon): paying trusted peers for remote task/swarm work over the mesh; exploratory, only after Stage 2 hardening.
 
 
