@@ -18,6 +18,7 @@
 | `openai`     | LLM (GPT direct)                        | [platform.openai.com](https://platform.openai.com)           |
 | `venice`     | LLM (Venice AI direct)                  | [venice.ai](https://venice.ai)                               |
 | `nearai`     | LLM (NEAR AI Cloud TEE inference)       | [near.ai](https://near.ai)                                   |
+| `cheaperinference` | LLM (Cheaper Inference gateway)   | [cheaperinference.com](https://cheaperinference.com/signup) |
 | `deepseek`   | LLM (DeepSeek direct)                   | [platform.deepseek.com](https://platform.deepseek.com)       |
 | `qwen`       | LLM (Qwen direct)                       | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
 | `groq`       | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)                 |
@@ -52,6 +53,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **OpenAI**          | `openai`          | `https://api.openai.com/v1`                         | OpenAI    | [Get Key](https://platform.openai.com)                           |
 | **Venice AI**       | `venice`          | `https://api.venice.ai/api/v1`                      | OpenAI    | [Get Key](https://venice.ai)                                     |
 | **NEAR AI Cloud**   | `nearai`          | `https://cloud-api.near.ai/v1`                      | OpenAI    | [Get Key](https://near.ai)                                       |
+| **Cheaper Inference** | `cheaperinference` | `https://api.cheaperinference.com/v1`           | OpenAI    | [Get Key](https://cheaperinference.com/signup)                   |
 | **Anthropic**       | `anthropic`       | `https://api.anthropic.com/v1`                      | Anthropic | [Get Key](https://console.anthropic.com)                         |
 | **智谱 AI (GLM)**   | `zhipu`           | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Get Key](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
 | **Z.AI Coding Plan** | `openai`         | `https://api.z.ai/api/coding/paas/v4`               | OpenAI    | [Get Key](https://z.ai/manage-apikey/apikey-list)                |
@@ -266,6 +268,22 @@ Notes that matter:
   "provider": "nearai",
   "model": "zai-org/GLM-5.1-FP8",
   "api_keys": ["your-nearai-api-key"]
+}
+```
+
+**Cheaper Inference**
+
+Cheaper Inference is an OpenAI-compatible gateway to models from several labs.
+Each model costs 15–60% less than the list price of its lab.
+Model IDs have no vendor prefix, for example `gpt-5.4-mini` or `claude-sonnet-5`.
+See the [model list](https://cheaperinference.com/#models) and the [docs](https://cheaperinference.com/docs).
+
+```json
+{
+  "model_name": "cheaperinference-gpt-mini",
+  "provider": "cheaperinference",
+  "model": "gpt-5.4-mini",
+  "api_keys": ["ci_live_..."]
 }
 ```
 

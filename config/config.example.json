@@ -73,6 +73,11 @@
       "api_keys": ["your-nearai-api-key"]
     },
     {
+      "model_name": "cheaperinference-gpt-mini",
+      "model": "cheaperinference/gpt-5.4-mini",
+      "api_keys": ["your-cheaperinference-api-key"]
+    },
+    {
       "model_name": "lmstudio-local",
       "model": "lmstudio/openai/gpt-oss-20b"
     },

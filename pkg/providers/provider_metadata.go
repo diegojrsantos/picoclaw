@@ -580,6 +580,24 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		Aliases:             []string{"dashscope-us"},
 		httpAPI:             true,
 	},
+	"cheaperinference": {
+		ID:                  "cheaperinference",
+		DisplayName:         "Cheaper Inference",
+		Domain:              "cheaperinference.com",
+		DefaultAPIBase:      "https://api.cheaperinference.com/v1",
+		CreateAllowed:       true,
+		DefaultModelAllowed: true,
+		SupportsFetch:       true,
+		Priority:            33,
+		CommonModels: []string{
+			"gpt-5.4-mini",
+			"gpt-5.4",
+			"claude-sonnet-5",
+			"gemini-3.1-pro",
+		},
+		Aliases: []string{"cheaper-inference"},
+		httpAPI: true,
+	},
 }
 
 var normalizedModelProviderAliasesByName = buildModelProviderAliasMap()

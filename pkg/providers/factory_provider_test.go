@@ -224,6 +224,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		{"openai", "openai"},
 		{"venice", "venice"},
 		{"nearai", "nearai"},
+		{"cheaperinference", "cheaperinference"},
 		{"groq", "groq"},
 		{"novita", "novita"},
 		{"openrouter", "openrouter"},
@@ -286,6 +287,16 @@ func TestGetDefaultAPIBase_GPT4Free(t *testing.T) {
 func TestGetDefaultAPIBase_Venice(t *testing.T) {
 	if got := getDefaultAPIBase("venice"); got != "https://api.venice.ai/api/v1" {
 		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "venice", got, "https://api.venice.ai/api/v1")
+	}
+}
+
+func TestGetDefaultAPIBase_CheaperInference(t *testing.T) {
+	want := "https://api.cheaperinference.com/v1"
+	if got := getDefaultAPIBase("cheaperinference"); got != want {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "cheaperinference", got, want)
+	}
+	if got := getDefaultAPIBase("cheaper-inference"); got != want {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "cheaper-inference", got, want)
 	}
 }
 
@@ -529,6 +540,28 @@ func TestCreateProviderFromConfig_Venice(t *testing.T) {
 	}
 	if modelID != "venice-uncensored" {
 		t.Errorf("modelID = %q, want %q", modelID, "venice-uncensored")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_CheaperInference(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-cheaperinference",
+		Model:     "cheaperinference/gpt-5.4-mini",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "gpt-5.4-mini" {
+		t.Errorf("modelID = %q, want %q", modelID, "gpt-5.4-mini")
 	}
 	if _, ok := provider.(*HTTPProvider); !ok {
 		t.Fatalf("expected *HTTPProvider, got %T", provider)
@@ -1107,6 +1140,26 @@ func TestModelProviderOptions(t *testing.T) {
 			option.DefaultAPIBase,
 			"https://api.siliconflow.cn/v1",
 		)
+	}
+	if option, ok := seen["cheaperinference"]; !ok {
+		t.Fatal("cheaperinference option missing")
+	} else {
+		if option.DisplayName != "Cheaper Inference" {
+			t.Fatalf("cheaperinference display_name = %q, want %q", option.DisplayName, "Cheaper Inference")
+		}
+		if option.DefaultAPIBase != "https://api.cheaperinference.com/v1" {
+			t.Fatalf(
+				"cheaperinference default_api_base = %q, want %q",
+				option.DefaultAPIBase,
+				"https://api.cheaperinference.com/v1",
+			)
+		}
+		if !option.SupportsFetch {
+			t.Fatal("cheaperinference should support upstream model listing")
+		}
+		if len(option.CommonModels) == 0 {
+			t.Fatal("cheaperinference common_models should not be empty")
+		}
 	}
 	if option, ok := seen["nearai"]; !ok {
 		t.Fatal("nearai option missing")

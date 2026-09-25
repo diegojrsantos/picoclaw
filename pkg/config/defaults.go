@@ -116,6 +116,14 @@ func DefaultConfig() *Config {
 				APIBase:   "https://cloud-api.near.ai/v1",
 			},
 
+			// Cheaper Inference gateway - https://cheaperinference.com
+			{
+				ModelName: "cheaperinference-gpt-mini",
+				Provider:  "cheaperinference",
+				Model:     "gpt-5.4-mini",
+				APIBase:   "https://api.cheaperinference.com/v1",
+			},
+
 			// Google Gemini - https://ai.google.dev/
 			{
 				ModelName: "gemini-2.0-flash",

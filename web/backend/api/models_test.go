@@ -2271,6 +2271,17 @@ func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration
 			"https://api.siliconflow.cn/v1",
 		)
 	}
+	if option, ok := optionsByID["cheaperinference"]; !ok {
+		t.Fatal("cheaperinference provider option missing")
+	} else if option.DefaultAPIBase != "https://api.cheaperinference.com/v1" {
+		t.Fatalf(
+			"cheaperinference default_api_base = %q, want %q",
+			option.DefaultAPIBase,
+			"https://api.cheaperinference.com/v1",
+		)
+	} else if !option.SupportsFetch {
+		t.Fatal("cheaperinference provider option should report supports_fetch")
+	}
 	if option, ok := optionsByID["nearai"]; !ok {
 		t.Fatal("nearai provider option missing")
 	} else if option.DefaultAPIBase != "https://cloud-api.near.ai/v1" {
