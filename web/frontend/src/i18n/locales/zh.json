@@ -552,6 +552,7 @@
         "allowOrigins": "允许访问的来源域名。可逐项添加，也支持一次粘贴多个值。",
         "wsUrl": "WebSocket 服务地址",
         "reconnectInterval": "断线后的重连间隔（秒）",
+        "reactionEnabled": "自动对新群消息添加表情回应（OneBot set_msg_emoji_like）。默认关闭。",
         "bridgeUrl": "桥接服务地址",
         "sessionStorePath": "本地会话存储目录路径",
         "useNative": "是否使用原生客户端模式连接",

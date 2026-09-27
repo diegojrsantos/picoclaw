@@ -637,6 +637,10 @@ type OneBotSettings struct {
 	AccessToken        SecureString `json:"access_token,omitzero" yaml:"access_token,omitempty" env:"PICOCLAW_CHANNELS_ONEBOT_ACCESS_TOKEN"`
 	ReconnectInterval  int          `json:"reconnect_interval"    yaml:"-"                      env:"PICOCLAW_CHANNELS_ONEBOT_RECONNECT_INTERVAL"`
 	GroupTriggerPrefix []string     `json:"group_trigger_prefix"  yaml:"-"                      env:"PICOCLAW_CHANNELS_ONEBOT_GROUP_TRIGGER_PREFIX"`
+	// ReactionEnabled gates the automatic acknowledgement reaction
+	// (set_msg_emoji_like) on inbound group messages. Absent/false means
+	// reactions are disabled; set to true in the WebUI OneBot panel to opt in.
+	ReactionEnabled bool `json:"reaction_enabled" yaml:"-" env:"PICOCLAW_CHANNELS_ONEBOT_REACTION_ENABLED"`
 }
 
 type WeComGroupConfig struct {

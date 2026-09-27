@@ -137,7 +137,13 @@ func (c *OneBotChannel) setMsgEmojiLike(messageID string, emojiID int, set bool)
 // ReactToMessage implements channels.ReactionCapable.
 // It adds an emoji reaction (ID 289) to group messages and returns an undo function.
 // Private messages return a no-op since reactions are only meaningful in groups.
+// The reaction is skipped entirely when channels.onebot.settings.reaction_enabled
+// is false (the default), making the behaviour configurable from the WebUI panel.
 func (c *OneBotChannel) ReactToMessage(ctx context.Context, chatID, messageID string) (func(), error) {
+	// Opt-in gate: no ack reaction unless explicitly enabled in config.
+	if c.config == nil || !c.config.ReactionEnabled {
+		return func() {}, nil
+	}
 	// Only react in group chats
 	if !strings.HasPrefix(chatID, "group:") {
 		return func() {}, nil

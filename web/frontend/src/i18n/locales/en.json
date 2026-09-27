@@ -552,6 +552,7 @@
         "allowOrigins": "Allowed origin domains. Add items one by one, or paste multiple values at once.",
         "wsUrl": "WebSocket service URL.",
         "reconnectInterval": "Reconnect interval after disconnection (seconds).",
+        "reactionEnabled": "Automatically acknowledge new group messages with an emoji reaction (OneBot set_msg_emoji_like). Off by default.",
         "bridgeUrl": "Bridge service URL.",
         "sessionStorePath": "Local path for session storage.",
         "useNative": "Whether to use native client mode.",
