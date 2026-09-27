@@ -568,6 +568,7 @@ func defaultChannels() ChannelsConfig {
 			"settings": map[string]any{
 				"ws_url":             "ws://127.0.0.1:3001",
 				"reconnect_interval": 5,
+				"reaction_enabled":   false,
 			},
 		},
 		"wecom": map[string]any{

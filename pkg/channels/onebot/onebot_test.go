@@ -1,6 +1,7 @@
 package onebot
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/media"
 )
 
@@ -123,4 +125,42 @@ func TestParseMessageSegments_StoresDownloadedMediaRef(t *testing.T) {
 	if meta.Filename != "image.png" {
 		t.Fatalf("meta.Filename = %q, want %q", meta.Filename, "image.png")
 	}
+}
+
+func TestReactToMessage_GatedByReactionEnabled(t *testing.T) {
+	ctx := context.Background()
+
+	// Default (reaction_enabled absent/false): the ack reaction must be skipped
+	// entirely — no API call, but a working undo function is still returned.
+	disabled := &OneBotChannel{config: &config.OneBotSettings{}}
+	undo, err := disabled.ReactToMessage(ctx, "group:123456", "789")
+	if err != nil {
+		t.Fatalf("ReactToMessage (disabled) error = %v, want nil", err)
+	}
+	if undo == nil {
+		t.Fatal("ReactToMessage (disabled) undo = nil, want non-nil no-op")
+	}
+	undo()
+
+	// Enabled but not a group chat: still a no-op (reactions only exist in groups).
+	enabled := &OneBotChannel{config: &config.OneBotSettings{ReactionEnabled: true}}
+	undo, err = enabled.ReactToMessage(ctx, "friend:123456", "789")
+	if err != nil {
+		t.Fatalf("ReactToMessage (enabled, private chat) error = %v, want nil", err)
+	}
+	if undo == nil {
+		t.Fatal("ReactToMessage (enabled, private chat) undo = nil, want non-nil no-op")
+	}
+	undo()
+
+	// Nil config must not panic and must stay disabled.
+	missing := &OneBotChannel{}
+	undo, err = missing.ReactToMessage(ctx, "group:123456", "789")
+	if err != nil {
+		t.Fatalf("ReactToMessage (nil config) error = %v, want nil", err)
+	}
+	if undo == nil {
+		t.Fatal("ReactToMessage (nil config) undo = nil, want non-nil no-op")
+	}
+	undo()
 }

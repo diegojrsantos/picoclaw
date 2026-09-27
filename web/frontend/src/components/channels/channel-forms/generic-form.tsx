@@ -110,6 +110,7 @@ export function GenericForm({
     const descriptions: Record<string, string> = {
       ws_url: t("channels.form.desc.wsUrl"),
       reconnect_interval: t("channels.form.desc.reconnectInterval"),
+      reaction_enabled: t("channels.form.desc.reactionEnabled"),
       bridge_url: t("channels.form.desc.bridgeUrl"),
       session_store_path: t("channels.form.desc.sessionStorePath"),
       use_native: t("channels.form.desc.useNative"),
