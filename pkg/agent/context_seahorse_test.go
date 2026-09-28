@@ -1173,7 +1173,7 @@ func TestSeahorseSummarizeSkipsCondensedWhenBelowThreshold(t *testing.T) {
 
 // routedSeahorseConfig returns a two-agent config (main default + support
 // routed) sharing the given workspace root.
-// ctxManager "" selects the legacy manager; "seahorse" selects the seahorse 
+// ctxManager "" selects the legacy manager; "seahorse" selects the seahorse
 // context manager.
 func routedSeahorseConfig(workspace, ctxManager string) *config.Config {
 	return &config.Config{
