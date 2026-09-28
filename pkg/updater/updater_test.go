@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
@@ -193,6 +194,128 @@ func TestFindAssetInfo_SelectsPreferredAsset(t *testing.T) {
 				t.Fatalf("checksum = %q, want %q", gotChecksum, tc.wantChecksum)
 			}
 		})
+	}
+}
+
+func TestFindAssetInfo_SelectsArchVariant(t *testing.T) {
+	// arm64 is listed first, as in real releases, so a substring match on
+	// "arm" would pick it for 32-bit ARM.
+	names := []string{
+		"picoclaw_Linux_arm64.tar.gz",
+		"picoclaw_Linux_armv6.tar.gz",
+		"picoclaw_Linux_armv7.tar.gz",
+		"picoclaw_Linux_x86_64.tar.gz",
+		"picoclaw_Linux_i386.tar.gz",
+		"picoclaw_Windows_arm64.zip",
+		"picoclaw_Windows_x86_64.zip",
+	}
+
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != testReleaseAPIPath {
+			http.NotFound(w, r)
+			return
+		}
+		assets := make([]testReleaseAsset, 0, len(names))
+		for _, name := range names {
+			assets = append(assets, testReleaseAsset{
+				Name:               name,
+				BrowserDownloadURL: server.URL + "/assets/" + name,
+				Digest:             "sha256:" + strings.Repeat("1", 64),
+			})
+		}
+		writeReleasePayload(w, testReleasePayload{TagName: "v0.3.1", Assets: assets})
+	}))
+	defer server.Close()
+
+	withTestHTTPClient(t, server.Client())
+
+	tests := []struct {
+		name     string
+		platform string
+		arch     string
+		goarm    int
+		want     string // asset name; empty means an error is expected
+	}{
+		{name: "arm goarm 7", platform: "linux", arch: "arm", goarm: 7, want: "picoclaw_Linux_armv7.tar.gz"},
+		{name: "arm goarm 6", platform: "linux", arch: "arm", goarm: 6, want: "picoclaw_Linux_armv6.tar.gz"},
+		{name: "arm goarm unknown", platform: "linux", arch: "arm", want: "picoclaw_Linux_armv6.tar.gz"},
+		{name: "arm goarm 5 has no asset", platform: "linux", arch: "arm", goarm: 5},
+		{name: "explicit armv7", platform: "linux", arch: "armv7", want: "picoclaw_Linux_armv7.tar.gz"},
+		{name: "arm64", platform: "linux", arch: "arm64", goarm: 7, want: "picoclaw_Linux_arm64.tar.gz"},
+		{name: "linux amd64", platform: "linux", arch: "amd64", want: "picoclaw_Linux_x86_64.tar.gz"},
+		{name: "windows amd64", platform: "windows", arch: "amd64", want: "picoclaw_Windows_x86_64.zip"},
+		{name: "linux 386", platform: "linux", arch: "386", want: "picoclaw_Linux_i386.tar.gz"},
+		{name: "windows 386 has no asset", platform: "windows", arch: "386"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			withLocalGOARM(t, tc.goarm)
+
+			gotURL, _, err := findAssetInfo(server.URL+testReleaseAPIPath, tc.platform, tc.arch)
+			if tc.want == "" {
+				if err == nil {
+					t.Fatalf("findAssetInfo(%q, %q) = %q, want error", tc.platform, tc.arch, gotURL)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("findAssetInfo(%q, %q) error: %v", tc.platform, tc.arch, err)
+			}
+			if wantURL := server.URL + "/assets/" + tc.want; gotURL != wantURL {
+				t.Fatalf("assetURL = %q, want %q", gotURL, wantURL)
+			}
+		})
+	}
+}
+
+func TestAssetMatchesArch(t *testing.T) {
+	tests := []struct {
+		name  string
+		alias string
+		want  bool
+	}{
+		{name: "picoclaw_Linux_arm64.tar.gz", alias: "arm", want: false},
+		{name: "picoclaw_Linux_armv7.tar.gz", alias: "arm", want: false},
+		{name: "picoclaw_Linux_armv7.tar.gz", alias: "armv7", want: true},
+		{name: "picoclaw_Linux_arm64.tar.gz", alias: "arm64", want: true},
+		{name: "picoclaw_Linux_x86_64.tar.gz", alias: "x86", want: false},
+		{name: "picoclaw_Windows_x86_64.zip", alias: "x86_64", want: true},
+		{name: "picoclaw_Linux_i386.tar.gz", alias: "i386", want: true},
+		{name: "picoclaw-linux-amd64.tgz", alias: "amd64", want: true},
+		{name: "picoclaw_armv7.deb", alias: "armv7", want: false},
+	}
+
+	for _, tc := range tests {
+		if got := assetMatchesArch(tc.name, tc.alias); got != tc.want {
+			t.Errorf("assetMatchesArch(%q, %q) = %v, want %v", tc.name, tc.alias, got, tc.want)
+		}
+	}
+}
+
+func TestGoarmFromSettings(t *testing.T) {
+	tests := []struct {
+		value string
+		want  int
+	}{
+		{value: "6", want: 6},
+		{value: "7", want: 7},
+		{value: "7,softfloat", want: 7},
+		{value: "", want: 0},
+	}
+
+	for _, tc := range tests {
+		settings := []debug.BuildSetting{
+			{Key: "GOARCH", Value: "arm"},
+			{Key: "GOARM", Value: tc.value},
+		}
+		if got := goarmFromSettings(settings); got != tc.want {
+			t.Errorf("goarmFromSettings(GOARM=%q) = %d, want %d", tc.value, got, tc.want)
+		}
+	}
+	if got := goarmFromSettings([]debug.BuildSetting{{Key: "GOARCH", Value: "arm64"}}); got != 0 {
+		t.Errorf("goarmFromSettings(no GOARM) = %d, want 0", got)
 	}
 }
 
@@ -411,5 +534,15 @@ func withTestHTTPClient(t *testing.T, client *http.Client) {
 	httpClient.Timeout = 5 * time.Second
 	t.Cleanup(func() {
 		httpClient = origClient
+	})
+}
+
+func withLocalGOARM(t *testing.T, goarm int) {
+	t.Helper()
+
+	orig := localGOARM
+	localGOARM = goarm
+	t.Cleanup(func() {
+		localGOARM = orig
 	})
 }
