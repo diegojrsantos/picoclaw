@@ -380,6 +380,26 @@ export function sendChatMessage({
   }
 }
 
+export function retryChatMessage(messageId: string) {
+  const target = getChatState().messages.find((msg) => msg.id === messageId)
+  if (!target || target.role !== "user") {
+    return false
+  }
+
+  const sent = sendChatMessage({
+    content: target.content,
+    attachments: target.attachments ?? [],
+  })
+
+  if (sent) {
+    updateChatStore((prev) => ({
+      messages: prev.messages.filter((msg) => msg.id !== messageId),
+    }))
+  }
+
+  return sent
+}
+
 export async function switchChatSession(sessionId: string) {
   if (sessionId === activeSessionIdRef) {
     return

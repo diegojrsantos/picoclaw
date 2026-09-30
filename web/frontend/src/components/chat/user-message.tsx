@@ -1,4 +1,4 @@
-import { IconCheck, IconCopy } from "@tabler/icons-react"
+import { IconCheck, IconCopy, IconRefresh } from "@tabler/icons-react"
 import { useTranslation } from "react-i18next"
 
 import { Button } from "@/components/ui/button"
@@ -11,12 +11,20 @@ interface UserMessageProps {
   content: string
   attachments?: ChatAttachment[]
   timestamp?: string | number
+  queued?: boolean
+  queueDepth?: number
+  failed?: boolean
+  onRetry?: () => void
 }
 
 export function UserMessage({
   content,
   attachments = [],
   timestamp = "",
+  queued = false,
+  queueDepth,
+  failed = false,
+  onRetry,
 }: UserMessageProps) {
   const { t } = useTranslation()
   const { copy, isCopied } = useCopyToClipboard()
@@ -87,6 +95,35 @@ export function UserMessage({
               <IconCopy className="h-4 w-4" />
             )}
           </Button>
+        </div>
+      )}
+
+      {(failed || queued) && (
+        <div className="flex items-center gap-1.5">
+          <span
+            className={cn(
+              "px-1 text-[12px]",
+              failed ? "text-red-500 dark:text-red-400" : "text-zinc-400",
+            )}
+          >
+            {failed
+              ? t("chat.failedBadge")
+              : t("chat.queuedBadge", { depth: queueDepth ?? 0 })}
+          </span>
+          {failed && onRetry && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-6 gap-1 px-2 text-[12px] text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
+              onClick={onRetry}
+              aria-label={t("chat.retryBadge")}
+              title={t("chat.retryBadge")}
+            >
+              <IconRefresh className="h-3.5 w-3.5" />
+              {t("chat.retryBadge")}
+            </Button>
+          )}
         </div>
       )}
 

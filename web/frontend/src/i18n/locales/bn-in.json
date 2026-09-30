@@ -117,7 +117,10 @@
       "apikey": "API Key",
       "oauth": "OAuth",
       "local": "লোকাল"
-    }
+    },
+    "queuedBadge": "সারিতে · {{depth}}",
+    "failedBadge": "পৌঁছায়নি",
+    "retryBadge": "পুনরায় চেষ্টা করুন"
   },
   "header": {
     "logout": {

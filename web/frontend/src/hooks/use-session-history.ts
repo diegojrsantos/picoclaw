@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import { type SessionSummary, deleteSession, getSessions } from "@/api/sessions"
@@ -7,11 +7,13 @@ const LIMIT = 20
 
 interface UseSessionHistoryOptions {
   activeSessionId: string
+  activeSessionTitle: string
   onDeletedActiveSession: () => void
 }
 
 export function useSessionHistory({
   activeSessionId,
+  activeSessionTitle,
   onDeletedActiveSession,
 }: UseSessionHistoryOptions) {
   const { t } = useTranslation()
@@ -106,8 +108,26 @@ export function useSessionHistory({
     [activeSessionId, onDeletedActiveSession, sessions],
   )
 
+  const displaySessions = useMemo(() => {
+    if (!activeSessionId) return sessions
+    if (sessions.some((session) => session.id === activeSessionId)) {
+      return sessions
+    }
+    const title = activeSessionTitle.trim() || t("chat.newChat")
+    const now = new Date().toISOString()
+    const optimisticSession: SessionSummary = {
+      id: activeSessionId,
+      title,
+      preview: title,
+      message_count: 0,
+      created: now,
+      updated: now,
+    }
+    return [optimisticSession, ...sessions]
+  }, [activeSessionId, activeSessionTitle, sessions, t])
+
   return {
-    sessions,
+    sessions: displaySessions,
     hasMore,
     loadError,
     loadErrorMessage: t("chat.historyLoadFailed"),

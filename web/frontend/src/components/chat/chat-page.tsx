@@ -5,6 +5,7 @@ import {
   type ClipboardEvent,
   type DragEvent,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react"
@@ -134,6 +135,7 @@ export function ChatPage() {
     activeSessionId,
     contextUsage,
     sendMessage,
+    retryMessage,
     switchSession,
     newChat,
   } = usePicoChat()
@@ -158,6 +160,11 @@ export function ChatPage() {
   })
   const canInput = inputDisabledReason === null
 
+  const activeSessionTitle = useMemo(() => {
+    const firstUserMessage = messages.find((msg) => msg.role === "user")
+    return (firstUserMessage?.content ?? "").trim().slice(0, 60)
+  }, [messages])
+
   const {
     sessions,
     hasMore,
@@ -168,6 +175,7 @@ export function ChatPage() {
     handleDeleteSession,
   } = useSessionHistory({
     activeSessionId,
+    activeSessionTitle,
     onDeletedActiveSession: newChat,
   })
 
@@ -180,6 +188,15 @@ export function ChatPage() {
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     syncScrollState(e.currentTarget)
   }
+
+  const prevTypingRef = useRef(isTyping)
+
+  useEffect(() => {
+    if (prevTypingRef.current && !isTyping) {
+      void loadSessions(true)
+    }
+    prevTypingRef.current = isTyping
+  }, [isTyping, loadSessions])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -200,6 +217,7 @@ export function ChatPage() {
     ) {
       setInput("")
       setAttachments([])
+      void loadSessions(true)
     }
   }
 
@@ -420,6 +438,10 @@ export function ChatPage() {
                     content={msg.content}
                     attachments={msg.attachments}
                     timestamp={msg.timestamp}
+                    queued={msg.queued}
+                    queueDepth={msg.queueDepth}
+                    failed={msg.failed}
+                    onRetry={() => void retryMessage(msg.id)}
                   />
                 )}
               </div>

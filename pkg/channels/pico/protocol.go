@@ -14,6 +14,7 @@ const (
 
 	// TypeMessageCreate is sent from server to client.
 	TypeMessageCreate = "message.create"
+	TypeMessageQueued = "message.queued"
 	TypeMessageUpdate = "message.update"
 	TypeMessageDelete = "message.delete"
 	TypeMediaCreate   = "media.create"
@@ -22,6 +23,8 @@ const (
 	TypeError         = "error"
 	TypePong          = "pong"
 
+	ErrorCodeSteeringQueueFull = "steering_queue_full"
+
 	PayloadKeyContent     = "content"
 	PayloadKeyThought     = "thought"
 	PayloadKeyKind        = "kind"
@@ -29,6 +32,8 @@ const (
 	PayloadKeyToolCalls   = "tool_calls"
 	PayloadKeyModelName   = "model_name"
 	PayloadKeyUsage       = "usage"
+	PayloadKeyRequestID   = "request_id"
+	PayloadKeyQueueDepth  = "queue_depth"
 
 	MessageKindThought   = "thought"
 	MessageKindToolCalls = "tool_calls"

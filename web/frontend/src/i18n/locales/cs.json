@@ -116,7 +116,10 @@
       "apikey": "API Key",
       "oauth": "OAuth",
       "local": "Lokální"
-    }
+    },
+    "queuedBadge": "ve frontě · {{depth}}",
+    "failedBadge": "nedoručeno",
+    "retryBadge": "Zkusit znovu"
   },
   "header": {
     "logout": {

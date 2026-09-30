@@ -118,7 +118,10 @@
       "apikey": "API Key",
       "oauth": "OAuth",
       "local": "Local"
-    }
+    },
+    "queuedBadge": "na fila · {{depth}}",
+    "failedBadge": "não entregue",
+    "retryBadge": "Tentar novamente"
   },
   "header": {
     "logout": {

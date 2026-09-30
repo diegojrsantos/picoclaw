@@ -8,6 +8,7 @@ import { normalizeUnixTimestamp } from "@/features/chat/state"
 import {
   type ChatAttachment,
   type ContextUsage,
+  getChatState,
   updateChatStore,
 } from "@/store/chat"
 
@@ -118,10 +119,17 @@ export function handlePicoMessage(
         Number.isFinite(Number(message.timestamp))
           ? normalizeUnixTimestamp(Number(message.timestamp))
           : Date.now()
+      const clearsQueued = !isPlaceholder && kind === "normal"
 
       updateChatStore((prev) => ({
         messages: [
-          ...prev.messages,
+          ...(clearsQueued
+            ? prev.messages.map((msg) =>
+                msg.queued
+                  ? { ...msg, queued: false, queueDepth: undefined }
+                  : msg,
+              )
+            : prev.messages),
           {
             id: messageId,
             role: "assistant",
@@ -215,6 +223,29 @@ export function handlePicoMessage(
       break
     }
 
+    case "message.queued": {
+      const requestId =
+        typeof payload.request_id === "string" ? payload.request_id : ""
+      const depth = Number(payload.queue_depth)
+      if (!requestId) {
+        break
+      }
+
+      updateChatStore((prev) => ({
+        messages: prev.messages.map((msg) =>
+          msg.id === requestId
+            ? {
+                ...msg,
+                queued: true,
+                failed: false,
+                ...(Number.isFinite(depth) ? { queueDepth: depth } : {}),
+              }
+            : msg,
+        ),
+      }))
+      break
+    }
+
     case "typing.start":
       updateChatStore({ isTyping: true })
       break
@@ -228,6 +259,26 @@ export function handlePicoMessage(
         typeof payload.request_id === "string" ? payload.request_id : ""
       const errorMessage =
         typeof payload.message === "string" ? payload.message : ""
+      const code = typeof payload.code === "string" ? payload.code : ""
+
+      if (code === "steering_queue_full" && requestId) {
+        const matchesLocalMessage = getChatState().messages.some(
+          (msg) => msg.id === requestId,
+        )
+        if (matchesLocalMessage) {
+          if (errorMessage) {
+            toast.error(errorMessage)
+          }
+          updateChatStore((prev) => ({
+            messages: prev.messages.map((msg) =>
+              msg.id === requestId
+                ? { ...msg, failed: true, queued: false, queueDepth: undefined }
+                : msg,
+            ),
+          }))
+          break
+        }
+      }
 
       console.error("Pico error:", payload)
       if (errorMessage) {

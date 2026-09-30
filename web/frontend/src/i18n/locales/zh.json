@@ -118,7 +118,10 @@
       "apikey": "API Key",
       "oauth": "OAuth",
       "local": "本地模型"
-    }
+    },
+    "queuedBadge": "排队中 · {{depth}}",
+    "failedBadge": "未送达",
+    "retryBadge": "重试"
   },
   "header": {
     "logout": {

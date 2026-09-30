@@ -1007,6 +1007,12 @@ func (m *Manager) initChannel(typeName, channelName string) {
 		if setter, ok := ch.(interface{ SetOwner(ch Channel) }); ok {
 			setter.SetOwner(ch)
 		}
+		// Inject runtime event bus into channels that subscribe to it.
+		if m.runtimeEvents != nil {
+			if aware, ok := ch.(RuntimeEventAware); ok {
+				aware.SetRuntimeEvents(m.runtimeEvents)
+			}
+		}
 		m.channels[channelName] = ch
 		m.publishChannelEvent(
 			runtimeevents.KindChannelLifecycleInitialized,

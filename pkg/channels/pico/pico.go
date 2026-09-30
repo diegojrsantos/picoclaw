@@ -21,6 +21,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -107,6 +108,11 @@ type PicoChannel struct {
 	deleteMessageFn    func(context.Context, string, string) error
 	// broadcastFn lets tests intercept outbound broadcasts. nil → broadcastToSession.
 	broadcastFn func(chatID string, msg PicoMessage) error
+
+	runtimeEventsMu   sync.Mutex
+	runtimeEvents     runtimeevents.Bus
+	runtimeEventsSub  runtimeevents.Subscription
+	runtimeEventsStop context.CancelFunc
 }
 
 // NewPicoChannel creates a new Pico Protocol channel.
@@ -250,6 +256,7 @@ func (c *PicoChannel) Start(ctx context.Context) error {
 	logger.InfoC("pico", "Starting Pico Protocol channel")
 	c.ctx, c.cancel = context.WithCancel(ctx)
 	c.SetRunning(true)
+	c.startRuntimeEvents(c.ctx)
 	logger.InfoC("pico", "Pico Protocol channel started")
 	return nil
 }
@@ -264,6 +271,7 @@ func (c *PicoChannel) Stop(ctx context.Context) error {
 		pc.close()
 	}
 
+	c.stopRuntimeEvents()
 	if c.cancel != nil {
 		c.cancel()
 	}
@@ -272,6 +280,106 @@ func (c *PicoChannel) Stop(ctx context.Context) error {
 	}
 
 	logger.InfoC("pico", "Pico Protocol channel stopped")
+	return nil
+}
+
+// SetRuntimeEvents implements channels.RuntimeEventAware.
+func (c *PicoChannel) SetRuntimeEvents(bus runtimeevents.Bus) {
+	c.runtimeEventsMu.Lock()
+	defer c.runtimeEventsMu.Unlock()
+	c.runtimeEvents = bus
+}
+
+// startRuntimeEvents subscribes to steering-queue feedback events on the
+// injected runtime event bus, when one is available.
+func (c *PicoChannel) startRuntimeEvents(ctx context.Context) {
+	c.runtimeEventsMu.Lock()
+	bus := c.runtimeEvents
+	c.runtimeEventsMu.Unlock()
+	if bus == nil {
+		return
+	}
+
+	subCtx, cancel := context.WithCancel(ctx)
+	sub, err := bus.Channel().
+		Source("agent").
+		OfKind(runtimeevents.KindAgentInterruptReceived).
+		Subscribe(subCtx, runtimeevents.SubscribeOptions{
+			Name:         "pico-steering-feedback",
+			Buffer:       64,
+			Concurrency:  runtimeevents.Locked,
+			Backpressure: runtimeevents.DropNewest,
+			PanicPolicy:  runtimeevents.RecoverAndLog,
+		}, c.handleRuntimeEvent)
+	if err != nil {
+		cancel()
+		logger.WarnCF("pico", "Failed to subscribe to runtime events", map[string]any{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.runtimeEventsMu.Lock()
+	c.runtimeEventsSub = sub
+	c.runtimeEventsStop = cancel
+	c.runtimeEventsMu.Unlock()
+}
+
+// stopRuntimeEvents cancels and closes the runtime events subscription.
+func (c *PicoChannel) stopRuntimeEvents() {
+	c.runtimeEventsMu.Lock()
+	sub := c.runtimeEventsSub
+	cancel := c.runtimeEventsStop
+	c.runtimeEventsSub = nil
+	c.runtimeEventsStop = nil
+	c.runtimeEventsMu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	if sub != nil {
+		_ = sub.Close()
+	}
+}
+
+// handleRuntimeEvent converts steering-queue feedback events into Pico frames
+// broadcast to the originating session.
+func (c *PicoChannel) handleRuntimeEvent(_ context.Context, evt runtimeevents.Event) error {
+	if evt.Attrs == nil {
+		return nil
+	}
+	result, _ := evt.Attrs[channels.AttrKeySteeringResult].(string)
+	if result != channels.SteeringResultQueued && result != channels.SteeringResultDropped {
+		return nil
+	}
+	if ch, _ := evt.Attrs[channels.AttrKeyChannel].(string); ch != "pico" {
+		return nil
+	}
+	chatID, _ := evt.Attrs[channels.AttrKeyChatID].(string)
+	requestID, _ := evt.Attrs[channels.AttrKeyMessageID].(string)
+	if chatID == "" || requestID == "" {
+		return nil
+	}
+
+	sessionID := strings.TrimPrefix(chatID, "pico:")
+	switch result {
+	case channels.SteeringResultQueued:
+		depth, _ := evt.Attrs[channels.AttrKeyQueueDepth].(int)
+		frame := newMessage(TypeMessageQueued, map[string]any{
+			PayloadKeyRequestID:  requestID,
+			PayloadKeyQueueDepth: depth,
+		})
+		frame.ID = uuid.New().String()
+		frame.SessionID = sessionID
+		return c.broadcast(chatID, frame)
+	case channels.SteeringResultDropped:
+		frame := newErrorWithPayload(ErrorCodeSteeringQueueFull,
+			"The agent is busy and the message queue is full. Your message was not delivered.",
+			map[string]any{PayloadKeyRequestID: requestID})
+		frame.ID = uuid.New().String()
+		frame.SessionID = sessionID
+		return c.broadcast(chatID, frame)
+	}
 	return nil
 }
 

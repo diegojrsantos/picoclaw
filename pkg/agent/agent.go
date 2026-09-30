@@ -200,7 +200,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					Role:    "user",
 					Content: msg.Content,
 					Media:   append([]string(nil), msg.Media...),
-				}); err != nil {
+				}, steeringOrigin{MessageID: msg.MessageID, Channel: msg.Channel, ChatID: msg.ChatID}); err != nil {
 					logger.WarnCF("agent", "Failed to enqueue steering message",
 						map[string]any{
 							"error":       err.Error(),

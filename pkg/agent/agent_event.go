@@ -31,6 +31,15 @@ func (ts turnEventScope) meta(iteration int, source, tracePath string) HookMeta 
 }
 
 func (al *AgentLoop) emitEvent(kind runtimeevents.Kind, meta HookMeta, payload any) {
+	al.emitEventWithAttrs(kind, meta, payload, nil)
+}
+
+func (al *AgentLoop) emitEventWithAttrs(
+	kind runtimeevents.Kind,
+	meta HookMeta,
+	payload any,
+	extraAttrs map[string]any,
+) {
 	clonedMeta := cloneHookMeta(meta)
 	eventCtx := cloneTurnContext(clonedMeta.turnContext)
 	evt := runtimeevents.Event{
@@ -41,6 +50,15 @@ func (al *AgentLoop) emitEvent(kind runtimeevents.Kind, meta HookMeta, payload a
 		Severity:    runtimeSeverityForAgentEvent(kind, payload),
 		Payload:     payload,
 		Attrs:       runtimeAttrsFromHookMeta(clonedMeta),
+	}
+
+	if len(extraAttrs) > 0 {
+		if evt.Attrs == nil {
+			evt.Attrs = make(map[string]any, len(extraAttrs))
+		}
+		for key, value := range extraAttrs {
+			evt.Attrs[key] = value
+		}
 	}
 
 	if al == nil {

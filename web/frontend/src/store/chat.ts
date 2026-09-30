@@ -47,6 +47,9 @@ export interface ChatMessage {
   modelName?: string
   attachments?: ChatAttachment[]
   toolCalls?: ChatToolCall[]
+  queued?: boolean
+  queueDepth?: number
+  failed?: boolean
 }
 
 export interface ContextUsage {

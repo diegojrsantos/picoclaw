@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -182,6 +183,14 @@ func (sq *steeringQueue) getMode() SteeringMode {
 	return sq.mode
 }
 
+// steeringOrigin identifies the inbound message that triggered a steering
+// enqueue, so feedback events can be routed back to the originating channel.
+type steeringOrigin struct {
+	MessageID string
+	Channel   string
+	ChatID    string
+}
+
 // Steer enqueues a user message to be injected into the currently running
 // agent loop. The message will be picked up after the current tool finishes
 // executing, causing any remaining tool calls in the batch to be skipped.
@@ -192,21 +201,29 @@ func (al *AgentLoop) Steer(msg providers.Message) error {
 		scope = ts.sessionKey
 		agentID = ts.agentID
 	}
-	return al.enqueueSteeringMessage(scope, agentID, msg)
+	return al.enqueueSteeringMessage(scope, agentID, msg, steeringOrigin{})
 }
 
-func (al *AgentLoop) enqueueSteeringMessage(scope, agentID string, msg providers.Message) error {
+func (al *AgentLoop) enqueueSteeringMessage(scope, agentID string, msg providers.Message, origin steeringOrigin) error {
 	if al.steering == nil {
 		return fmt.Errorf("steering queue is not initialized")
 	}
 
 	msg = steeringPromptMessage(msg)
 	if err := al.steering.pushScope(scope, msg); err != nil {
+		queueDepth := al.steering.lenScope(scope)
 		logger.WarnCF("agent", "Failed to enqueue steering message", map[string]any{
 			"error": err.Error(),
 			"role":  msg.Role,
 			"scope": normalizeSteeringScope(scope),
 		})
+		al.emitSteeringFeedback(
+			al.steeringFeedbackMeta(scope, agentID),
+			channels.SteeringResultDropped,
+			queueDepth,
+			origin,
+			msg,
+		)
 		return err
 	}
 
@@ -219,30 +236,67 @@ func (al *AgentLoop) enqueueSteeringMessage(scope, agentID string, msg providers
 		"scope":       normalizeSteeringScope(scope),
 	})
 
+	al.emitSteeringFeedback(
+		al.steeringFeedbackMeta(scope, agentID),
+		channels.SteeringResultQueued,
+		queueDepth,
+		origin,
+		msg,
+	)
+
+	return nil
+}
+
+// steeringFeedbackMeta builds the HookMeta used for steering feedback events,
+// preferring the active turn's event metadata when one exists.
+func (al *AgentLoop) steeringFeedbackMeta(scope, agentID string) HookMeta {
 	meta := HookMeta{
 		Source:    "Steer",
 		TracePath: "turn.interrupt.received",
 	}
 	if ts := al.getAnyActiveTurnState(); ts != nil {
-		meta = ts.eventMeta("Steer", "turn.interrupt.received")
-	} else {
-		if strings.TrimSpace(agentID) != "" {
-			meta.AgentID = agentID
-		}
-		normalizedScope := normalizeSteeringScope(scope)
-		if normalizedScope != manualSteeringScope {
-			meta.SessionKey = normalizedScope
-		}
-		if meta.AgentID == "" {
-			if registry := al.GetRegistry(); registry != nil {
-				if agent := registry.GetDefaultAgent(); agent != nil {
-					meta.AgentID = agent.ID
-				}
+		return ts.eventMeta("Steer", "turn.interrupt.received")
+	}
+	if strings.TrimSpace(agentID) != "" {
+		meta.AgentID = agentID
+	}
+	normalizedScope := normalizeSteeringScope(scope)
+	if normalizedScope != manualSteeringScope {
+		meta.SessionKey = normalizedScope
+	}
+	if meta.AgentID == "" {
+		if registry := al.GetRegistry(); registry != nil {
+			if agent := registry.GetDefaultAgent(); agent != nil {
+				meta.AgentID = agent.ID
 			}
 		}
 	}
+	return meta
+}
 
-	al.emitEvent(
+// emitSteeringFeedback publishes a machine-readable interrupt event carrying
+// the steering enqueue outcome so channels can surface queue feedback.
+func (al *AgentLoop) emitSteeringFeedback(
+	meta HookMeta,
+	result string,
+	queueDepth int,
+	origin steeringOrigin,
+	msg providers.Message,
+) {
+	attrs := map[string]any{
+		channels.AttrKeySteeringResult: result,
+		channels.AttrKeyQueueDepth:     queueDepth,
+	}
+	if origin.MessageID != "" {
+		attrs[channels.AttrKeyMessageID] = origin.MessageID
+	}
+	if origin.Channel != "" {
+		attrs[channels.AttrKeyChannel] = origin.Channel
+	}
+	if origin.ChatID != "" {
+		attrs[channels.AttrKeyChatID] = origin.ChatID
+	}
+	al.emitEventWithAttrs(
 		runtimeevents.KindAgentInterruptReceived,
 		meta,
 		InterruptReceivedPayload{
@@ -251,9 +305,8 @@ func (al *AgentLoop) enqueueSteeringMessage(scope, agentID string, msg providers
 			ContentLen: len(msg.Content),
 			QueueDepth: queueDepth,
 		},
+		attrs,
 	)
-
-	return nil
 }
 
 // SteeringMode returns the current steering mode.
