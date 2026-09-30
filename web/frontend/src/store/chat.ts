@@ -64,6 +64,20 @@ export type ConnectionState =
   | "connected"
   | "error"
 
+/**
+ * What the current turn is actually doing, derived only from events the pico
+ * WebSocket really reports (see `features/chat/turn-phase.ts`). There is no
+ * synthetic progress here: if the stream goes quiet the phase simply stops
+ * advancing and the UI escalates to a "still working" hint.
+ */
+export type TurnPhase =
+  | "idle"
+  | "connecting"
+  | "thinking"
+  | "reasoning"
+  | "tool"
+  | "writing"
+
 export interface ChatStoreState {
   messages: ChatMessage[]
   connectionState: ConnectionState
@@ -71,6 +85,14 @@ export interface ChatStoreState {
   activeSessionId: string
   hasHydratedActiveSession: boolean
   contextUsage?: ContextUsage
+  /** Current turn phase; `idle` when no turn is running. */
+  turnPhase: TurnPhase
+  /** Extra detail for the phase, e.g. the name of the tool being run. */
+  turnPhaseDetail?: string
+  /** Epoch ms when the running turn started; undefined when idle. */
+  turnStartedAt?: number
+  /** Epoch ms of the last stream event seen for the running turn. */
+  turnActivityAt?: number
 }
 
 type ChatStorePatch = Partial<ChatStoreState>
@@ -81,6 +103,7 @@ const DEFAULT_CHAT_STATE: ChatStoreState = {
   isTyping: false,
   activeSessionId: getInitialActiveSessionId(),
   hasHydratedActiveSession: false,
+  turnPhase: "idle",
 }
 
 export const chatAtom = atom<ChatStoreState>(DEFAULT_CHAT_STATE)
@@ -112,6 +135,26 @@ export function updateChatStore(
 
     if (next.activeSessionId !== prev.activeSessionId) {
       writeStoredSessionId(next.activeSessionId)
+    }
+
+    // Keep the turn phase honest even for call sites that only flip `isTyping`
+    // (send / switch session / new chat / connection errors). When a patch does
+    // not set the phase explicitly, derive it from `isTyping` so the indicator
+    // can never get stuck on a stale phase.
+    if (!("turnPhase" in nextPatch)) {
+      if (next.isTyping === false) {
+        if (next.turnPhase !== "idle") {
+          next.turnPhase = "idle"
+          next.turnPhaseDetail = undefined
+          next.turnStartedAt = undefined
+          next.turnActivityAt = undefined
+        }
+      } else if (next.turnPhase === "idle") {
+        const now = Date.now()
+        next.turnPhase = "connecting"
+        next.turnStartedAt = now
+        next.turnActivityAt = now
+      }
     }
 
     return next

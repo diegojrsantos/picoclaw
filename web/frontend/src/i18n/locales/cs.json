@@ -59,6 +59,15 @@
       "step3": "Připravuji odpověď...",
       "step4": "Už brzy..."
     },
+    "working": {
+      "connecting": "Připojování...",
+      "thinking": "Přemýšlím...",
+      "reasoning": "Uvažuji...",
+      "tool": "Spouštím nástroj...",
+      "toolNamed": "Spouštím {{tool}}...",
+      "writing": "Píši odpověď...",
+      "stalledHint": "Stále pracuji — trvá to déle než obvykle. Spojení je aktivní; delší uvažování nebo pomalejší poskytovatel může chvíli trvat."
+    },
     "reasoningLabel": "Uvažování",
     "toolCallsLabel": "Volání nástrojů",
     "toolCallExplanationLabel": "Poznámka k volání",

@@ -59,6 +59,15 @@
       "step3": "Preparing response...",
       "step4": "Almost there..."
     },
+    "working": {
+      "connecting": "Connecting...",
+      "thinking": "Thinking...",
+      "reasoning": "Reasoning...",
+      "tool": "Running a tool...",
+      "toolNamed": "Running {{tool}}...",
+      "writing": "Writing response...",
+      "stalledHint": "Still working — this is taking longer than usual. The connection is alive; long reasoning or a slow provider can take a while."
+    },
     "reasoningLabel": "Reasoning",
     "toolCallsLabel": "Tool calls",
     "toolCallExplanationLabel": "Call note",

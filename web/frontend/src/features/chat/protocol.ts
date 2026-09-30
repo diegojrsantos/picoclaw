@@ -6,7 +6,13 @@ import {
 } from "@/features/chat/assistant-message-state"
 import { normalizeUnixTimestamp } from "@/features/chat/state"
 import {
+  type TurnPhaseEvent,
+  applyTurnPhaseEvent,
+  firstToolCallName,
+} from "@/features/chat/turn-phase"
+import {
   type ChatAttachment,
+  type ChatStoreState,
   type ContextUsage,
   updateChatStore,
 } from "@/store/chat"
@@ -78,9 +84,13 @@ function parseContextUsage(
   return {
     used_tokens: used,
     total_tokens: total,
-    history_tokens: obj.history_tokens != null ? Number(obj.history_tokens) : undefined,
+    history_tokens:
+      obj.history_tokens != null ? Number(obj.history_tokens) : undefined,
     compress_at_tokens: Number(obj.compress_at_tokens) || 0,
-    summarize_at_tokens: obj.summarize_at_tokens != null ? Number(obj.summarize_at_tokens) : undefined,
+    summarize_at_tokens:
+      obj.summarize_at_tokens != null
+        ? Number(obj.summarize_at_tokens)
+        : undefined,
     used_percent: Number(obj.used_percent) || 0,
   }
 }
@@ -93,6 +103,28 @@ function parseModelName(payload: Record<string, unknown>): string | undefined {
   return modelName || undefined
 }
 
+/**
+ * Fold a turn-phase event into the current chat state, returning the slice of
+ * the store that tracks the running turn. Kept separate from the message
+ * updates so every handler can report progress the same way.
+ */
+function turnPhasePatch(
+  prev: ChatStoreState,
+  event: TurnPhaseEvent,
+  now: number,
+): Partial<ChatStoreState> {
+  return applyTurnPhaseEvent(
+    {
+      turnPhase: prev.turnPhase,
+      turnPhaseDetail: prev.turnPhaseDetail,
+      turnStartedAt: prev.turnStartedAt,
+      turnActivityAt: prev.turnActivityAt,
+    },
+    event,
+    now,
+  )
+}
+
 export function handlePicoMessage(
   message: PicoMessage,
   expectedSessionId: string,
@@ -102,6 +134,7 @@ export function handlePicoMessage(
   }
 
   const payload = message.payload || {}
+  const now = Date.now()
 
   switch (message.type) {
     case "message.create":
@@ -119,6 +152,20 @@ export function handlePicoMessage(
           ? normalizeUnixTimestamp(Number(message.timestamp))
           : Date.now()
 
+      const isFinalReply =
+        !isPlaceholder && (kind === "normal" || message.type === "media.create")
+
+      // Derive the phase from what this message actually is: a placeholder
+      // means the model is generating, a thought is reasoning, tool_calls is a
+      // tool in flight, and a normal reply means we are writing the answer.
+      const phaseEvent: TurnPhaseEvent = isPlaceholder
+        ? { kind: "generating" }
+        : kind === "thought"
+          ? { kind: "reasoning" }
+          : kind === "tool_calls"
+            ? { kind: "tool", toolName: firstToolCallName(toolCalls) }
+            : { kind: "writing" }
+
       updateChatStore((prev) => ({
         messages: [
           ...prev.messages,
@@ -133,12 +180,12 @@ export function handlePicoMessage(
             timestamp,
           },
         ],
-        isTyping:
-          !isPlaceholder &&
-          (kind === "normal" || message.type === "media.create")
-            ? false
-            : prev.isTyping,
+        isTyping: isFinalReply ? false : prev.isTyping,
         ...(contextUsage ? { contextUsage } : {}),
+        // A final reply ends the turn; otherwise report the concrete phase.
+        ...(isFinalReply
+          ? turnPhasePatch(prev, { kind: "stop" }, now)
+          : turnPhasePatch(prev, phaseEvent, now)),
       }))
       break
     }
@@ -157,16 +204,21 @@ export function handlePicoMessage(
         break
       }
 
-      updateChatStore((prev) => ({
-        messages: (() => {
+      updateChatStore((prev) => {
+        let updatedKind: ChatStoreState["messages"][number]["kind"]
+        let updatedToolCalls: ChatStoreState["messages"][number]["toolCalls"]
+
+        const messages = (() => {
           let found = false
-          const messages = prev.messages.map((msg) => {
+          const next = prev.messages.map((msg) => {
             if (msg.id !== messageId) {
               return msg
             }
             found = true
             const { content, kind, toolCalls } =
               parseAssistantMessageUpdateState(payload, msg)
+            updatedKind = kind
+            updatedToolCalls = toolCalls
             return {
               ...msg,
               id: messageId,
@@ -178,14 +230,16 @@ export function handlePicoMessage(
             }
           })
           if (found) {
-            return messages
+            return next
           }
 
           const { content, kind, toolCalls } =
             parseAssistantMessageUpdateState(payload)
+          updatedKind = kind
+          updatedToolCalls = toolCalls
 
           return [
-            ...messages,
+            ...next,
             {
               id: messageId,
               role: "assistant" as const,
@@ -197,9 +251,22 @@ export function handlePicoMessage(
               timestamp,
             },
           ]
-        })(),
-        ...(contextUsage ? { contextUsage } : {}),
-      }))
+        })()
+
+        // Streaming progress: reflect the kind the message currently has.
+        const phaseEvent: TurnPhaseEvent =
+          updatedKind === "thought"
+            ? { kind: "reasoning" }
+            : updatedKind === "tool_calls"
+              ? { kind: "tool", toolName: firstToolCallName(updatedToolCalls) }
+              : { kind: "writing" }
+
+        return {
+          messages,
+          ...(contextUsage ? { contextUsage } : {}),
+          ...turnPhasePatch(prev, phaseEvent, now),
+        }
+      })
       break
     }
 
@@ -216,11 +283,17 @@ export function handlePicoMessage(
     }
 
     case "typing.start":
-      updateChatStore({ isTyping: true })
+      updateChatStore((prev) => ({
+        isTyping: true,
+        ...turnPhasePatch(prev, { kind: "start" }, now),
+      }))
       break
 
     case "typing.stop":
-      updateChatStore({ isTyping: false })
+      updateChatStore((prev) => ({
+        isTyping: false,
+        ...turnPhasePatch(prev, { kind: "stop" }, now),
+      }))
       break
 
     case "error": {
@@ -238,6 +311,7 @@ export function handlePicoMessage(
           ? prev.messages.filter((msg) => msg.id !== requestId)
           : prev.messages,
         isTyping: false,
+        ...turnPhasePatch(prev, { kind: "stop" }, now),
       }))
       break
     }

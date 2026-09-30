@@ -59,6 +59,15 @@
       "step3": "Preparando resposta...",
       "step4": "Quase lá..."
     },
+    "working": {
+      "connecting": "Conectando...",
+      "thinking": "Pensando...",
+      "reasoning": "Raciocinando...",
+      "tool": "Executando uma ferramenta...",
+      "toolNamed": "Executando {{tool}}...",
+      "writing": "Escrevendo resposta...",
+      "stalledHint": "Ainda trabalhando — está demorando mais que o normal. A conexão está ativa; raciocínio longo ou um provedor lento pode levar um tempo."
+    },
     "reasoningLabel": "Raciocínio",
     "toolCallsLabel": "Chamadas de ferramentas",
     "toolCallExplanationLabel": "Nota da chamada",

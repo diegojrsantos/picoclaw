@@ -59,6 +59,15 @@
       "step3": "准备回复...",
       "step4": "马上就好..."
     },
+    "working": {
+      "connecting": "连接中...",
+      "thinking": "思考中...",
+      "reasoning": "推理中...",
+      "tool": "正在运行工具...",
+      "toolNamed": "正在运行 {{tool}}...",
+      "writing": "正在撰写回复...",
+      "stalledHint": "仍在处理——这次比平时久一些。连接正常，较长的推理或较慢的模型可能需要更长时间。"
+    },
     "reasoningLabel": "思考",
     "toolCallsLabel": "工具调用",
     "toolCallExplanationLabel": "调用提示",
