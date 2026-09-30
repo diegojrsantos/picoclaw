@@ -64,6 +64,21 @@ export type ConnectionState =
   | "connected"
   | "error"
 
+/**
+ * Origin channel of the active session ("pico", "telegram", "cli", ...).
+ * Undefined for a fresh Web UI chat that has not been persisted yet.
+ */
+export type ActiveSessionChannel = string
+
+/**
+ * Classification of the active session, mirroring the backend `source` field.
+ * Only "manual" sessions are writable from the Web UI: every other source is a
+ * session owned by another channel or by automation (cron), which the Web UI can
+ * read but not post into. Undefined means "unknown, assume writable" so that a
+ * brand new local chat is never locked.
+ */
+export type ActiveSessionSource = "manual" | "bridge" | "channel"
+
 export interface ChatStoreState {
   messages: ChatMessage[]
   connectionState: ConnectionState
@@ -71,6 +86,10 @@ export interface ChatStoreState {
   activeSessionId: string
   hasHydratedActiveSession: boolean
   contextUsage?: ContextUsage
+  /** Origin channel of the active session; undefined for a fresh local chat. */
+  activeSessionChannel?: ActiveSessionChannel
+  /** Classification of the active session; undefined = assume writable. */
+  activeSessionSource?: ActiveSessionSource
 }
 
 type ChatStorePatch = Partial<ChatStoreState>
@@ -111,7 +130,16 @@ export function updateChatStore(
     const next = { ...prev, ...nextPatch }
 
     if (next.activeSessionId !== prev.activeSessionId) {
-      writeStoredSessionId(next.activeSessionId)
+      // Only persist writable (manual) sessions. A read-only session id
+      // belongs to another channel (e.g. "telegram:...") and must not be
+      // restored on reload: the pico WebSocket would try to reopen it as a
+      // pico peer id and create a bogus session.
+      if (
+        next.activeSessionSource === undefined ||
+        next.activeSessionSource === "manual"
+      ) {
+        writeStoredSessionId(next.activeSessionId)
+      }
     }
 
     return next
@@ -120,3 +148,16 @@ export function updateChatStore(
 
 export { shouldShowAssistantMessage, DEFAULT_ASSISTANT_DETAIL_VISIBILITY }
 export type { AssistantDetailVisibility }
+
+/**
+ * A session is read-only when its origin is not an interactive Web UI chat.
+ * `undefined` source means "unknown" (a fresh local chat or a legacy session
+ * without scope metadata) and is treated as writable so we never lock the user
+ * out of their own chat.
+ */
+export function isActiveSessionReadOnly(state: ChatStoreState): boolean {
+  return (
+    state.activeSessionSource !== undefined &&
+    state.activeSessionSource !== "manual"
+  )
+}

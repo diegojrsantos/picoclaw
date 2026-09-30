@@ -1,5 +1,16 @@
 import { launcherFetch } from "@/api/http"
 
+/**
+ * How a session originated (see the backend classifier in
+ * `web/backend/api/session.go`):
+ * - "manual":  an interactive Web UI chat on the pico channel (writable).
+ * - "bridge":  an external integration reusing the pico channel (read-only).
+ * - "channel": any other channel (telegram, cli, ...) or pico automation such
+ *   as cron jobs (read-only).
+ * Empty/undefined for legacy sessions discovered without scope metadata.
+ */
+export type SessionSource = "manual" | "bridge" | "channel"
+
 export interface SessionSummary {
   id: string
   title: string
@@ -7,6 +18,10 @@ export interface SessionSummary {
   message_count: number
   created: string
   updated: string
+  /** Origin channel ("pico", "telegram", "cli", ...); may be absent. */
+  channel?: string
+  /** Session classification; may be absent for legacy sessions. */
+  source?: SessionSource
 }
 
 export interface SessionDetail {
@@ -39,6 +54,10 @@ export interface SessionDetail {
   summary: string
   created: string
   updated: string
+  /** Origin channel ("pico", "telegram", "cli", ...); may be absent. */
+  channel?: string
+  /** Session classification; may be absent for legacy sessions. */
+  source?: SessionSource
 }
 
 export async function getSessions(

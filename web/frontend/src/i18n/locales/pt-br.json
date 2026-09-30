@@ -49,7 +49,8 @@
       "websocketConnecting": "Conectando ao serviço de chat... Aguarde.",
       "websocketDisconnected": "Não é possível conversar: a conexão WebSocket está desconectada. Verifique a rede e o status do gateway, atualize a página ou reinicie o Launcher.",
       "websocketError": "Não é possível conversar: a conexão WebSocket falhou. Verifique a rede e o status do gateway e tente novamente.",
-      "noDefaultModel": "Não é possível conversar: nenhum modelo padrão está selecionado. Defina um modelo padrão na página de Modelos."
+      "noDefaultModel": "Não é possível conversar: nenhum modelo padrão está selecionado. Defina um modelo padrão na página de Modelos.",
+      "sessionReadOnly": "Esta conversa pertence a outro canal, então é somente leitura aqui. Inicie um novo chat para continuar."
     },
     "newChat": "Novo Chat",
     "notConnected": "O Gateway não está rodando. Inicie-o para conversar.",
@@ -118,6 +119,13 @@
       "apikey": "API Key",
       "oauth": "OAuth",
       "local": "Local"
+    },
+    "sessions": {
+      "title": "Sessões",
+      "groupChats": "Conversas",
+      "groupChannels": "Canais",
+      "readOnlyBadge": "somente leitura",
+      "loadMore": "Carregar mais"
     }
   },
   "header": {

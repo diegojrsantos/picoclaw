@@ -17,7 +17,6 @@ import {
 } from "@/components/chat/chat-composer"
 import { ChatEmptyState } from "@/components/chat/chat-empty-state"
 import { ModelSelector } from "@/components/chat/model-selector"
-import { SessionHistoryMenu } from "@/components/chat/session-history-menu"
 import { TypingIndicator } from "@/components/chat/typing-indicator"
 import { UserMessage } from "@/components/chat/user-message"
 import { PageHeader } from "@/components/page-header"
@@ -38,7 +37,6 @@ import {
 import { useChatModels } from "@/hooks/use-chat-models"
 import { useGateway } from "@/hooks/use-gateway"
 import { usePicoChat } from "@/hooks/use-pico-chat"
-import { useSessionHistory } from "@/hooks/use-session-history"
 import type { AssistantDetailVisibility } from "@/store/chat"
 import type { ConnectionState } from "@/store/chat"
 import type { ChatAttachment } from "@/store/chat"
@@ -52,11 +50,20 @@ function resolveChatInputDisabledReason({
   hasDefaultModel,
   connectionState,
   gatewayState,
+  sessionReadOnly,
 }: {
   hasDefaultModel: boolean
   connectionState: ConnectionState
   gatewayState: GatewayState
+  sessionReadOnly: boolean
 }): ChatInputDisabledReason | null {
+  // A session owned by another channel (or by pico automation) can be read but
+  // never posted into from the Web UI. This takes priority over every other
+  // reason: no gateway/websocket state can make it writable.
+  if (sessionReadOnly) {
+    return "sessionReadOnly"
+  }
+
   if (gatewayState === "unknown") {
     return "gatewayUnknown"
   }
@@ -131,10 +138,9 @@ export function ChatPage() {
     messages,
     connectionState,
     isTyping,
-    activeSessionId,
+    activeSessionSource,
     contextUsage,
     sendMessage,
-    switchSession,
     newChat,
   } = usePicoChat()
 
@@ -151,25 +157,15 @@ export function ChatPage() {
     handleSetDefault,
   } = useChatModels({ isConnected: isGatewayRunning })
   const hasDefaultModel = Boolean(defaultModelName)
+  const sessionReadOnly =
+    activeSessionSource !== undefined && activeSessionSource !== "manual"
   const inputDisabledReason = resolveChatInputDisabledReason({
     hasDefaultModel,
     connectionState,
     gatewayState: gwState,
+    sessionReadOnly,
   })
   const canInput = inputDisabledReason === null
-
-  const {
-    sessions,
-    hasMore,
-    loadError,
-    loadErrorMessage,
-    observerRef,
-    loadSessions,
-    handleDeleteSession,
-  } = useSessionHistory({
-    activeSessionId,
-    onDeletedActiveSession: newChat,
-  })
 
   const syncScrollState = (element: HTMLDivElement) => {
     const { clientHeight, scrollHeight, scrollTop } = element
@@ -365,22 +361,6 @@ export function ChatPage() {
           <IconPlus className="size-4" />
           <span className="hidden sm:inline">{t("chat.newChat")}</span>
         </Button>
-
-        <SessionHistoryMenu
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          hasMore={hasMore}
-          loadError={loadError}
-          loadErrorMessage={loadErrorMessage}
-          observerRef={observerRef}
-          onOpenChange={(open) => {
-            if (open) {
-              void loadSessions(true)
-            }
-          }}
-          onSwitchSession={switchSession}
-          onDeleteSession={handleDeleteSession}
-        />
       </PageHeader>
 
       <div

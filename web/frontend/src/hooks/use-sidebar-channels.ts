@@ -1,19 +1,4 @@
-import {
-  IconBrandChrome,
-  IconBrandDingtalk,
-  IconBrandDiscord,
-  IconBrandLine,
-  IconBrandMatrix,
-  IconBrandQq,
-  IconBrandSlack,
-  IconBrandTelegram,
-  IconBrandWechat,
-  IconBrandWhatsapp,
-  IconCamera,
-  IconMessages,
-  IconPlug,
-  IconRobot,
-} from "@tabler/icons-react"
+import { IconPlug } from "@tabler/icons-react"
 import type { TFunction } from "i18next"
 import { useAtomValue } from "jotai"
 import * as React from "react"
@@ -25,6 +10,7 @@ import {
   getChannelsCatalog,
 } from "@/api/channels"
 import { getChannelDisplayName } from "@/components/channels/channel-display-name"
+import { CHANNEL_ICON_MAP } from "@/components/channels/channel-icon"
 import { gatewayAtom } from "@/store/gateway"
 
 const DEFAULT_VISIBLE_CHANNELS = 4
@@ -48,41 +34,6 @@ function getChannelImportanceOrder(language: string): string[] {
     ? ["feishu", "weixin", "discord", "telegram"]
     : ["discord", "telegram", "feishu", "weixin"]
   return [...priority, ...CHANNEL_IMPORTANCE_TAIL]
-}
-
-function IconLark({ className }: { className?: string }) {
-  return React.createElement("span", {
-    className,
-    "aria-hidden": "true",
-    style: {
-      display: "inline-block",
-      backgroundColor: "currentColor",
-      mask: "url(/lark.svg) center / contain no-repeat",
-      WebkitMask: "url(/lark.svg) center / contain no-repeat",
-    } as React.CSSProperties,
-  })
-}
-
-const CHANNEL_ICON_MAP: Record<
-  string,
-  React.ComponentType<{ className?: string }>
-> = {
-  telegram: IconBrandTelegram,
-  discord: IconBrandDiscord,
-  slack: IconBrandSlack,
-  feishu: IconLark,
-  dingtalk: IconBrandDingtalk,
-  line: IconBrandLine,
-  qq: IconBrandQq,
-  weixin: IconBrandWechat,
-  wecom: IconBrandWechat,
-  whatsapp: IconBrandWhatsapp,
-  whatsapp_native: IconBrandWhatsapp,
-  matrix: IconBrandMatrix,
-  maixcam: IconCamera,
-  onebot: IconRobot,
-  pico: IconBrandChrome,
-  irc: IconMessages,
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

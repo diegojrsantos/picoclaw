@@ -49,7 +49,8 @@
       "websocketConnecting": "Connecting to chat service... Please wait.",
       "websocketDisconnected": "Unable to chat: WebSocket connection is disconnected. Check network and gateway status, then refresh the page or restart Launcher.",
       "websocketError": "Unable to chat: WebSocket connection failed. Check network and gateway status, then retry.",
-      "noDefaultModel": "Unable to chat: No default model is selected. Set a default model on the Models page."
+      "noDefaultModel": "Unable to chat: No default model is selected. Set a default model on the Models page.",
+      "sessionReadOnly": "This conversation belongs to another channel, so it is read-only here. Start a new chat to keep talking."
     },
     "newChat": "New Chat",
     "notConnected": "Gateway is not running. Start it to chat.",
@@ -118,6 +119,13 @@
       "apikey": "API Key",
       "oauth": "OAuth",
       "local": "Local"
+    },
+    "sessions": {
+      "title": "Sessions",
+      "groupChats": "Chats",
+      "groupChannels": "Channels",
+      "readOnlyBadge": "read-only",
+      "loadMore": "Load more"
     }
   },
   "header": {

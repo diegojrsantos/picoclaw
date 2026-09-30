@@ -2,7 +2,7 @@ import { getDefaultStore } from "jotai"
 import { toast } from "sonner"
 
 import {
-  loadSessionMessages,
+  loadSessionDetail,
   mergeHistoryMessages,
 } from "@/features/chat/history"
 import { type PicoMessage, handlePicoMessage } from "@/features/chat/protocol"
@@ -14,6 +14,7 @@ import {
 import { invalidateSocket, isCurrentSocket } from "@/features/chat/websocket"
 import i18n from "@/i18n"
 import {
+  type ActiveSessionSource,
   type ChatAttachment,
   getChatState,
   updateChatStore,
@@ -77,9 +78,19 @@ function needsActiveSessionHydration(): boolean {
   )
 }
 
-function setActiveSessionId(sessionId: string) {
+function setActiveSessionId(
+  sessionId: string,
+  meta?: { channel?: string; source?: ActiveSessionSource },
+) {
   activeSessionIdRef = sessionId
-  updateChatStore({ activeSessionId: sessionId })
+  // Channel and source are set in the same patch as the id: the store decides
+  // whether the id is worth persisting based on the source, so they must change
+  // atomically or a read-only id could be written as the session to restore.
+  updateChatStore({
+    activeSessionId: sessionId,
+    activeSessionChannel: meta?.channel,
+    activeSessionSource: meta?.source,
+  })
 }
 
 function disconnectChatInternal({
@@ -264,8 +275,8 @@ export async function hydrateActiveSession() {
     return
   }
 
-  hydratePromise = loadSessionMessages(storedSessionId)
-    .then((historyMessages) => {
+  hydratePromise = loadSessionDetail(storedSessionId)
+    .then((loaded) => {
       const currentState = getChatState()
       if (currentState.activeSessionId !== storedSessionId) {
         return
@@ -274,18 +285,22 @@ export async function hydrateActiveSession() {
       if (currentState.messages.length > 0) {
         updateChatStore({
           messages: mergeHistoryMessages(
-            historyMessages,
+            loaded.messages,
             currentState.messages,
           ),
           hasHydratedActiveSession: true,
+          activeSessionChannel: loaded.channel,
+          activeSessionSource: loaded.source,
         })
         return
       }
 
       updateChatStore({
-        messages: historyMessages,
+        messages: loaded.messages,
         isTyping: false,
         hasHydratedActiveSession: true,
+        activeSessionChannel: loaded.channel,
+        activeSessionSource: loaded.source,
       })
     })
     .catch((error) => {
@@ -386,12 +401,15 @@ export async function switchChatSession(sessionId: string) {
   }
 
   try {
-    const historyMessages = await loadSessionMessages(sessionId)
+    const loaded = await loadSessionDetail(sessionId)
 
     disconnectChatInternal({ clearDesiredConnection: false })
-    setActiveSessionId(sessionId)
+    setActiveSessionId(sessionId, {
+      channel: loaded.channel,
+      source: loaded.source,
+    })
     updateChatStore({
-      messages: historyMessages,
+      messages: loaded.messages,
       isTyping: false,
       hasHydratedActiveSession: true,
       contextUsage: undefined,
@@ -407,12 +425,59 @@ export async function switchChatSession(sessionId: string) {
   }
 }
 
+/**
+ * Open a session that belongs to another channel (telegram, cli, ...) or to
+ * pico automation (cron, bridges). The Web UI can read its history but cannot
+ * post into it: writing to a channel session requires channel-specific
+ * outbound routing, which is out of scope here (see SDD #3406 Part 2-A §3/§5).
+ *
+ * Unlike `switchChatSession`, this does NOT reconnect the pico WebSocket —
+ * there is nothing to send to — and it marks the session read-only so the
+ * composer is disabled with a clear hint.
+ */
+export async function openReadOnlySession(sessionId: string) {
+  if (sessionId === activeSessionIdRef) {
+    return
+  }
+
+  try {
+    const loaded = await loadSessionDetail(sessionId)
+
+    // Stop any live pico connection and do not ask to reconnect: a read-only
+    // session has no writable pico peer id behind it.
+    disconnectChatInternal({ clearDesiredConnection: true })
+    setActiveSessionId(sessionId, {
+      channel: loaded.channel,
+      // A read-only session always has a non-manual source; if the backend did
+      // not classify it (legacy), fall back to "channel" so it stays locked.
+      source: loaded.source ?? "channel",
+    })
+    updateChatStore({
+      messages: loaded.messages,
+      isTyping: false,
+      hasHydratedActiveSession: true,
+      contextUsage: undefined,
+    })
+  } catch (error) {
+    console.error("Failed to open read-only session:", error)
+    toast.error(i18n.t("chat.historyOpenFailed"))
+  }
+}
+
 export async function newChatSession() {
-  if (getChatState().messages.length === 0) {
+  const state = getChatState()
+  // Normally skip when already on a fresh empty chat. But if the current
+  // session is read-only (another channel / cron), always start a new writable
+  // chat even when empty, so the user can never get stuck in read-only mode.
+  const isReadOnly =
+    state.activeSessionSource !== undefined &&
+    state.activeSessionSource !== "manual"
+  if (state.messages.length === 0 && !isReadOnly) {
     return
   }
 
   disconnectChatInternal({ clearDesiredConnection: false })
+  // No meta: a brand new local chat is writable (source undefined).
   setActiveSessionId(generateSessionId())
   updateChatStore({
     messages: [],

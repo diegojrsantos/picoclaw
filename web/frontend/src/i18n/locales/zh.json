@@ -49,7 +49,8 @@
       "websocketConnecting": "正在连接聊天服务，请稍候。",
       "websocketDisconnected": "无法对话：WebSocket 连接已断开。请检查网络与服务状态，然后刷新页面或重启 Launcher。",
       "websocketError": "无法对话：WebSocket 连接失败。请检查网络与服务状态后重试。",
-      "noDefaultModel": "无法对话：尚未设置默认模型。请前往模型页面设置默认模型。"
+      "noDefaultModel": "无法对话：尚未设置默认模型。请前往模型页面设置默认模型。",
+      "sessionReadOnly": "此对话属于其他渠道，在此为只读。开始新聊天以继续对话。"
     },
     "newChat": "新建对话",
     "notConnected": "服务未运行，请先启动以进行对话。",
@@ -118,6 +119,13 @@
       "apikey": "API Key",
       "oauth": "OAuth",
       "local": "本地模型"
+    },
+    "sessions": {
+      "title": "会话",
+      "groupChats": "聊天",
+      "groupChannels": "渠道",
+      "readOnlyBadge": "只读",
+      "loadMore": "加载更多"
     }
   },
   "header": {

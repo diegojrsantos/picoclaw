@@ -24,6 +24,7 @@ export type ChatInputDisabledReason =
   | "websocketDisconnected"
   | "websocketError"
   | "noDefaultModel"
+  | "sessionReadOnly"
 
 interface ChatComposerProps {
   input: string

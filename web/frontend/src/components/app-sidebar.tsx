@@ -15,6 +15,7 @@ import { Link, useRouterState } from "@tanstack/react-router"
 import * as React from "react"
 import { useTranslation } from "react-i18next"
 
+import { SidebarSessions } from "@/components/sidebar-sessions"
 import {
   Collapsible,
   CollapsibleContent,
@@ -179,79 +180,83 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     >
       <SidebarContent className="bg-background">
         {navGroups.map((group) => (
-          <Collapsible
-            key={group.label}
-            defaultOpen={group.defaultOpen}
-            className="group/collapsible mb-1"
-          >
-            <SidebarGroup className="px-2 py-0">
-              <SidebarGroupLabel asChild>
-                <CollapsibleTrigger className="hover:bg-muted/60 flex w-full cursor-pointer items-center justify-between rounded-md px-2 py-1.5 transition-colors">
-                  <span>{t(group.label)}</span>
-                  <IconChevronRight className="size-3.5 opacity-50 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                </CollapsibleTrigger>
-              </SidebarGroupLabel>
-              <CollapsibleContent>
-                <SidebarGroupContent className="pt-1">
-                  <SidebarMenu>
-                    {group.items.map((item) => {
-                      const isActive =
-                        currentPath === item.url ||
-                        (item.url !== "/" &&
-                          currentPath.startsWith(`${item.url}/`))
-                      return (
-                        <SidebarMenuItem key={item.title}>
+          <React.Fragment key={group.label}>
+            <Collapsible
+              defaultOpen={group.defaultOpen}
+              className="group/collapsible mb-1"
+            >
+              <SidebarGroup className="px-2 py-0">
+                <SidebarGroupLabel asChild>
+                  <CollapsibleTrigger className="hover:bg-muted/60 flex w-full cursor-pointer items-center justify-between rounded-md px-2 py-1.5 transition-colors">
+                    <span>{t(group.label)}</span>
+                    <IconChevronRight className="size-3.5 opacity-50 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                  </CollapsibleTrigger>
+                </SidebarGroupLabel>
+                <CollapsibleContent>
+                  <SidebarGroupContent className="pt-1">
+                    <SidebarMenu>
+                      {group.items.map((item) => {
+                        const isActive =
+                          currentPath === item.url ||
+                          (item.url !== "/" &&
+                            currentPath.startsWith(`${item.url}/`))
+                        return (
+                          <SidebarMenuItem key={item.title}>
+                            <SidebarMenuButton
+                              asChild
+                              isActive={isActive}
+                              onClick={handleNavItemClick}
+                              data-tour={
+                                item.url === "/models"
+                                  ? "models-nav"
+                                  : undefined
+                              }
+                              className={`h-9 px-3 ${isActive ? "bg-accent/80 text-foreground font-medium" : "text-muted-foreground hover:bg-muted/60"}`}
+                            >
+                              <Link to={item.url}>
+                                <item.icon
+                                  className={`size-4 ${isActive ? "opacity-100" : "opacity-60"}`}
+                                />
+                                <span
+                                  className={
+                                    isActive ? "opacity-100" : "opacity-80"
+                                  }
+                                >
+                                  {item.translateTitle === false
+                                    ? item.title
+                                    : t(item.title)}
+                                </span>
+                              </Link>
+                            </SidebarMenuButton>
+                          </SidebarMenuItem>
+                        )
+                      })}
+                      {group.isChannelsGroup && hasMoreChannels && (
+                        <SidebarMenuItem key="channels-more-toggle">
                           <SidebarMenuButton
-                            asChild
-                            isActive={isActive}
-                            onClick={handleNavItemClick}
-                            data-tour={
-                              item.url === "/models" ? "models-nav" : undefined
-                            }
-                            className={`h-9 px-3 ${isActive ? "bg-accent/80 text-foreground font-medium" : "text-muted-foreground hover:bg-muted/60"}`}
+                            onClick={toggleShowAllChannels}
+                            className="text-muted-foreground hover:bg-muted/60 h-9 px-3"
                           >
-                            <Link to={item.url}>
-                              <item.icon
-                                className={`size-4 ${isActive ? "opacity-100" : "opacity-60"}`}
-                              />
-                              <span
-                                className={
-                                  isActive ? "opacity-100" : "opacity-80"
-                                }
-                              >
-                                {item.translateTitle === false
-                                  ? item.title
-                                  : t(item.title)}
-                              </span>
-                            </Link>
+                            {showAllChannels ? (
+                              <IconChevronsUp className="size-4 opacity-60" />
+                            ) : (
+                              <IconChevronsDown className="size-4 opacity-60" />
+                            )}
+                            <span className="opacity-80">
+                              {showAllChannels
+                                ? t("navigation.show_less_channels")
+                                : t("navigation.show_more_channels")}
+                            </span>
                           </SidebarMenuButton>
                         </SidebarMenuItem>
-                      )
-                    })}
-                    {group.isChannelsGroup && hasMoreChannels && (
-                      <SidebarMenuItem key="channels-more-toggle">
-                        <SidebarMenuButton
-                          onClick={toggleShowAllChannels}
-                          className="text-muted-foreground hover:bg-muted/60 h-9 px-3"
-                        >
-                          {showAllChannels ? (
-                            <IconChevronsUp className="size-4 opacity-60" />
-                          ) : (
-                            <IconChevronsDown className="size-4 opacity-60" />
-                          )}
-                          <span className="opacity-80">
-                            {showAllChannels
-                              ? t("navigation.show_less_channels")
-                              : t("navigation.show_more_channels")}
-                          </span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    )}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </CollapsibleContent>
-            </SidebarGroup>
-          </Collapsible>
+                      )}
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                </CollapsibleContent>
+              </SidebarGroup>
+            </Collapsible>
+            {group.label === "navigation.chat" && <SidebarSessions />}
+          </React.Fragment>
         ))}
       </SidebarContent>
       <SidebarRail />

@@ -1762,3 +1762,193 @@ func TestHandleSessions_IgnoresMetaJSONInLegacyFallback(t *testing.T) {
 		t.Fatalf("len(items) = %d, want 0", len(items))
 	}
 }
+
+// --- P2-A: multi-channel session discovery + source classification ----------
+
+// seedScopedSession writes a JSONL session with a structured scope so the
+// discovery path in sessionRefFromMeta is exercised exactly as in production.
+func seedScopedSession(
+	t *testing.T,
+	store *memory.JSONLStore,
+	sessionKey string,
+	channel string,
+	chatValue string,
+	content string,
+) {
+	t.Helper()
+	if err := store.AddFullMessage(nil, sessionKey, providers.Message{
+		Role:    "user",
+		Content: content,
+	}); err != nil {
+		t.Fatalf("AddFullMessage(%s) error = %v", sessionKey, err)
+	}
+	scopeData, err := json.Marshal(session.SessionScope{
+		Version:    session.ScopeVersionV1,
+		AgentID:    "main",
+		Channel:    channel,
+		Account:    "default",
+		Dimensions: []string{"chat"},
+		Values:     map[string]string{"chat": chatValue},
+	})
+	if err != nil {
+		t.Fatalf("Marshal(scope %s) error = %v", sessionKey, err)
+	}
+	if err := store.UpsertSessionMeta(nil, sessionKey, scopeData, nil); err != nil {
+		t.Fatalf("UpsertSessionMeta(%s) error = %v", sessionKey, err)
+	}
+}
+
+func TestHandleListSessions_ClassifiesSessionSources(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	store, storeErr := memory.NewJSONLStore(dir)
+	if storeErr != nil {
+		t.Fatalf("NewJSONLStore() error = %v", storeErr)
+	}
+
+	const manualUUID = "ac4b83c8-543e-464e-b48f-976176a44002"
+
+	// manual pico Web chat: opaque key + UUID peer id.
+	seedScopedSession(t, store, "sk_v1_manual", "pico", "direct:pico:"+manualUUID, "manual chat")
+	// bridge pico: opaque key + non-UUID peer id (external integration).
+	seedScopedSession(t, store, "sk_v1_bridge", "pico", "direct:pico:trello-webhook", "bridge chat")
+	// cron pico: legacy agent:cron-... key (automation, not a Web chat).
+	seedScopedSession(t, store, "agent:cron-job1-uuid", "pico", "direct:pico:"+manualUUID, "cron run")
+	// telegram: non-pico channel.
+	seedScopedSession(t, store, "sk_v1_telegram", "telegram", "direct:960728166", "telegram chat")
+	// cli: non-pico channel.
+	seedScopedSession(t, store, "sk_v1_cli", "cli", "direct:direct", "cli chat")
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", rec.Code, rec.Body.String())
+	}
+
+	var items []sessionListItem
+	if err := json.Unmarshal(rec.Body.Bytes(), &items); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(items) != 5 {
+		t.Fatalf("len(items) = %d, want 5, body=%s", len(items), rec.Body.String())
+	}
+
+	byID := make(map[string]sessionListItem, len(items))
+	for _, item := range items {
+		byID[item.ID] = item
+	}
+
+	type want struct {
+		channel string
+		source  string
+	}
+	expected := map[string]want{
+		// manual keeps the peer-id address (UUID).
+		manualUUID: {channel: "pico", source: sessionSourceManual},
+		// bridge keeps the peer-id address (trello-webhook).
+		"trello-webhook": {channel: "pico", source: sessionSourceBridge},
+		// cron is pico-scoped automation -> channel source, file-keyed id.
+		"pico:" + sanitizeSessionKey("agent:cron-job1-uuid"): {channel: "pico", source: sessionSourceChannel},
+		// non-pico channels -> file-keyed id prefixed by channel.
+		"telegram:" + sanitizeSessionKey("sk_v1_telegram"): {channel: "telegram", source: sessionSourceChannel},
+		"cli:" + sanitizeSessionKey("sk_v1_cli"):           {channel: "cli", source: sessionSourceChannel},
+	}
+
+	for id, w := range expected {
+		item, ok := byID[id]
+		if !ok {
+			t.Fatalf("missing session id %q; got ids %v", id, keysOf(byID))
+		}
+		if item.Channel != w.channel {
+			t.Fatalf("session %q channel = %q, want %q", id, item.Channel, w.channel)
+		}
+		if item.Source != w.source {
+			t.Fatalf("session %q source = %q, want %q", id, item.Source, w.source)
+		}
+	}
+}
+
+func keysOf(m map[string]sessionListItem) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
+func TestHandleGetSession_NonPicoReadOnly(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	store, storeErr := memory.NewJSONLStore(dir)
+	if storeErr != nil {
+		t.Fatalf("NewJSONLStore() error = %v", storeErr)
+	}
+
+	tgKey := "sk_v1_telegram_detail"
+	seedScopedSession(t, store, tgKey, "telegram", "direct:960728166", "telegram history")
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	sessionID := "telegram:" + sanitizeSessionKey(tgKey)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+sessionID, nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		ID       string `json:"id"`
+		Channel  string `json:"channel"`
+		Source   string `json:"source"`
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if resp.ID != sessionID {
+		t.Fatalf("resp.ID = %q, want %q", resp.ID, sessionID)
+	}
+	if resp.Channel != "telegram" {
+		t.Fatalf("resp.Channel = %q, want telegram", resp.Channel)
+	}
+	if resp.Source != sessionSourceChannel {
+		t.Fatalf("resp.Source = %q, want %q", resp.Source, sessionSourceChannel)
+	}
+	if len(resp.Messages) != 1 || resp.Messages[0].Content != "telegram history" {
+		t.Fatalf("messages = %#v, want single telegram history user message", resp.Messages)
+	}
+}
+
+func TestClassifyPicoPeerSource(t *testing.T) {
+	cases := []struct {
+		peerID string
+		want   string
+	}{
+		{"ac4b83c8-543e-464e-b48f-976176a44002", sessionSourceManual},
+		{"AC4B83C8-543E-464E-B48F-976176A44002", sessionSourceManual},
+		{"trello-webhook", sessionSourceBridge},
+		{"sk_v1_2be50c46c577a8a7ae84ad974e9fc422bf1e788d", sessionSourceBridge},
+		{"", sessionSourceBridge},
+		{"not-a-uuid", sessionSourceBridge},
+	}
+	for _, tc := range cases {
+		if got := classifyPicoPeerSource(tc.peerID); got != tc.want {
+			t.Fatalf("classifyPicoPeerSource(%q) = %q, want %q", tc.peerID, got, tc.want)
+		}
+	}
+}

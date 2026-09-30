@@ -49,7 +49,8 @@
       "websocketConnecting": "Připojování ke chat službě... Čekejte prosím.",
       "websocketDisconnected": "Chat nedostupný: WebSocket spojení bylo přerušeno. Zkontrolujte síť a stav gateway, obnovte stránku nebo restartujte Launcher.",
       "websocketError": "Chat nedostupný: WebSocket spojení selhalo. Zkontrolujte síť a stav gateway a zkuste to znovu.",
-      "noDefaultModel": "Chat nedostupný: žádný výchozí model není vybrán. Nastavte výchozí model na stránce Modely."
+      "noDefaultModel": "Chat nedostupný: žádný výchozí model není vybrán. Nastavte výchozí model na stránce Modely.",
+      "sessionReadOnly": "Tato konverzace patří jinému kanálu, takže je zde pouze ke čtení. Chcete-li pokračovat, začněte nový chat."
     },
     "newChat": "Nový chat",
     "notConnected": "Gateway není spuštěna. Spusťte ji pro zahájení chatu.",
@@ -116,6 +117,13 @@
       "apikey": "API Key",
       "oauth": "OAuth",
       "local": "Lokální"
+    },
+    "sessions": {
+      "title": "Relace",
+      "groupChats": "Chaty",
+      "groupChannels": "Kanály",
+      "readOnlyBadge": "jen ke čtení",
+      "loadMore": "Načíst další"
     }
   },
   "header": {

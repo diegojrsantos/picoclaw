@@ -39,11 +39,19 @@ function toChatAttachments({
   return merged.length > 0 ? merged : undefined
 }
 
-export async function loadSessionMessages(
+export interface LoadedSession {
+  messages: ChatMessage[]
+  /** Origin channel ("pico", "telegram", "cli", ...); may be absent. */
+  channel?: string
+  /** Classification; may be absent for legacy sessions. */
+  source?: "manual" | "bridge" | "channel"
+}
+
+export async function loadSessionDetail(
   sessionId: string,
-): Promise<ChatMessage[]> {
+): Promise<LoadedSession> {
   const detail = await getSessionHistory(sessionId)
-  return detail.messages.map((message, index) => ({
+  const messages = detail.messages.map((message, index) => ({
     id: `hist-${index}-${Date.now()}`,
     role: message.role,
     content: message.content,
@@ -59,6 +67,7 @@ export async function loadSessionMessages(
     }),
     timestamp: message.created_at ?? detail.updated,
   }))
+  return { messages, channel: detail.channel, source: detail.source }
 }
 
 function normalizeMessageTimestamp(timestamp: number | string): string {
