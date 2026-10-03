@@ -1,36 +1,10 @@
-# ============================================================
-# Stage 1: Build the picoclaw binary
-# ============================================================
-FROM golang:1.26.0-alpine AS builder
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates wget \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN apk add --no-cache git make
+WORKDIR /app
+RUN wget -O pc.tar.gz https://github.com/sipeed/picoclaw/releases/latest/download/picoclaw_Linux_x86_64.tar.gz \
+    && tar xzf pc.tar.gz && rm pc.tar.gz && ls -la
 
-WORKDIR /src
-
-# Cache dependencies
-COPY go.mod go.sum ./
-RUN go mod download
-
-# Copy source and build
-COPY . .
-RUN make build
-
-# ============================================================
-# Stage 2: Minimal runtime image
-# ============================================================
-FROM alpine:3.23
-
-RUN apk add --no-cache ca-certificates tzdata curl
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget -q --spider http://localhost:18790/health || exit 1
-
-# Copy binary
-COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
-
-# Create picoclaw home directory
-RUN /usr/local/bin/picoclaw onboard
-
-ENTRYPOINT ["picoclaw"]
-CMD ["gateway"]
+ENV PICOCLAW_GATEWAY_HOST=0.0.0.0
+CMD ["sh", "-c", "./picoclaw onboard || true; ./picoclaw gateway"]
