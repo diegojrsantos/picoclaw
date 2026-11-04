@@ -1,0 +1,22 @@
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates wget \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+RUN wget -qO pc.tar.gz https://github.com/sipeed/picoclaw/releases/latest/download/picoclaw_Linux_x86_64.tar.gz \
+ && tar xzf pc.tar.gz \
+ && rm pc.tar.gz \
+ && chmod +x /app/picoclaw
+
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# Hostless injeta HOST=0.0.0.0 e PORT=8000; o entrypoint usa $PORT no gateway.
+ENV PICOCLAW_GATEWAY_HOST=0.0.0.0
+
+EXPOSE 8000
+
+CMD ["/app/entrypoint.sh"]
