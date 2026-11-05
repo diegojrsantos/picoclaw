@@ -39,17 +39,48 @@ KEY_JSON="$(json_escape "${PICOCLAW_LLM_API_KEY:-}")"
 MODEL_JSON="$(json_escape "${PICOCLAW_MODEL:-nvidia/nvidia/nemotron-3.5-bolt-e4b}")"
 TOKEN_JSON="$(json_escape "${PICOCLAW_CHANNELS_TELEGRAM_TOKEN:-}")"
 ALLOW_JSON="$(json_escape "${PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM:-}")"
+# WhatsApp no v0.3.1 tem dois modos: "native" (whatsmeow, exige binario compilado
+# com -tags whatsapp_native) e "bridge" (WebSocket para um servico externo).
+# O binario do release so tem o modo BRIDGE (conferido nas strings do release),
+# entao aqui so configuramos o bridge: settings.bridge_url.
+WA_BRIDGE_JSON="$(json_escape "${PICOCLAW_CHANNELS_WHATSAPP_BRIDGE_URL:-}")"
+WA_ALLOW_JSON="$(json_escape "${PICOCLAW_CHANNELS_WHATSAPP_ALLOW_FROM:-}")"
 
-# O canal so entra no config se o token existir (deploy sobe verde sem bot).
+# Monta o channel_list: cada canal so entra se tiver a sua credencial/URL.
+# Sem isso o deploy sobe verde, mas sem nenhum canal ativo.
+CHANNEL_ITEMS=""
+add_channel() {
+  if [ -z "$CHANNEL_ITEMS" ]; then
+    CHANNEL_ITEMS="$1"
+  else
+    CHANNEL_ITEMS="$CHANNEL_ITEMS, $1"
+  fi
+}
+
 if [ -n "$TOKEN_JSON" ]; then
   if [ -n "$ALLOW_JSON" ]; then
     ALLOW_ARR="[\"$ALLOW_JSON\"]"
   else
     ALLOW_ARR="[]"
   fi
-  CHANNELS_BLOCK="\"channel_list\": { \"telegram\": { \"enabled\": true, \"type\": \"telegram\", \"allow_from\": $ALLOW_ARR, \"settings\": { \"token\": \"$TOKEN_JSON\" } } },"
+  add_channel "\"telegram\": { \"enabled\": true, \"type\": \"telegram\", \"allow_from\": $ALLOW_ARR, \"settings\": { \"token\": \"$TOKEN_JSON\" } }"
+fi
+
+if [ -n "$WA_BRIDGE_JSON" ]; then
+  if [ -n "$WA_ALLOW_JSON" ]; then
+    WA_ALLOW_ARR="[\"$WA_ALLOW_JSON\"]"
+  else
+    WA_ALLOW_ARR="[]"
+  fi
+  add_channel "\"whatsapp\": { \"enabled\": true, \"type\": \"whatsapp\", \"allow_from\": $WA_ALLOW_ARR, \"settings\": { \"bridge_url\": \"$WA_BRIDGE_JSON\" } }"
+fi
+
+if [ -n "$CHANNEL_ITEMS" ]; then
+  CHANNELS_BLOCK="\"channel_list\": { $CHANNEL_ITEMS },"
+  CHANNELS_ENABLED="$(echo "$CHANNEL_ITEMS" | grep -o '"type": "[a-z_]*"' | sed -e 's/"type": "//' -e 's/"//' | tr '\n' ' ')"
 else
   CHANNELS_BLOCK=""
+  CHANNELS_ENABLED="(nenhum)"
 fi
 
 cat > "$CONFIG" <<EOF
@@ -94,4 +125,5 @@ if [ -z "${PICOCLAW_LLM_API_KEY:-}" ]; then
 fi
 
 echo "==> picoclaw gateway em 0.0.0.0:$PORT_FINAL | model=$MODEL_JSON"
+echo "==> canais ativos: $CHANNELS_ENABLED"
 exec /app/picoclaw gateway
