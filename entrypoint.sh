@@ -4,14 +4,27 @@ set -eu
 # PicoClaw v0.3.1 usa config "version 3": model_list + agents.defaults.model_name.
 # O binario do release NAO e o mesmo codigo do branch feat/agent-browser-tool.
 CONFIG_DIR="${PICOCLAW_HOME:-${HOME:-/root}/.picoclaw}"
-CONFIG="$CONFIG_DIR/config.json"
 PORT_FINAL="${PICOCLAW_GATEWAY_PORT:-${PORT:-8000}}"
 
 case "$PORT_FINAL" in
   ''|*[!0-9]*) PORT_FINAL=8000 ;;
 esac
 
-mkdir -p "$CONFIG_DIR/workspace"
+# A Hostless pode rodar com usuario nao-root (ou rootfs read-only). Se o
+# diretorio da imagem nao for gravavel, cai para /tmp e leva o workspace junto.
+# Sem isso o "cat > $CONFIG" falha e o dash sai com exit code 2.
+if mkdir -p "$CONFIG_DIR/workspace" 2>/dev/null && : > "$CONFIG_DIR/.writetest" 2>/dev/null; then
+  rm -f "$CONFIG_DIR/.writetest"
+else
+  CONFIG_DIR="/tmp/picoclaw-home"
+  mkdir -p "$CONFIG_DIR/workspace"
+  if [ -d /app/.picoclaw/workspace ]; then
+    cp -R /app/.picoclaw/workspace/. "$CONFIG_DIR/workspace/" 2>/dev/null || true
+  fi
+  export PICOCLAW_HOME="$CONFIG_DIR"
+  echo "==> usando home gravavel: $CONFIG_DIR" >&2
+fi
+CONFIG="$CONFIG_DIR/config.json"
 
 # O workspace ja vem materializado na imagem (onboard roda no build, nao no
 # boot) para nao atrasar o primeiro health check da Hostless.

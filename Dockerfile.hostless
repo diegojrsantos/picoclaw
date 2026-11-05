@@ -22,6 +22,7 @@ ENV PICOCLAW_HOME=/app/.picoclaw \
     PICOCLAW_GATEWAY_HOST=0.0.0.0
 RUN mkdir -p "$PICOCLAW_HOME/workspace" \
  && (timeout 60 /app/picoclaw onboard </dev/null >/dev/null 2>&1 || true) \
+ && chmod -R a+rwX "$PICOCLAW_HOME" \
  && test -d "$PICOCLAW_HOME/workspace"
 
 COPY entrypoint.sh /app/entrypoint.sh
