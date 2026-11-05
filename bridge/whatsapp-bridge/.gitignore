@@ -1,0 +1,4 @@
+node_modules/
+auth_info/
+creds.b64
+*.log

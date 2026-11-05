@@ -1,0 +1,17 @@
+{
+  "name": "picoclaw-whatsapp-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bridge WhatsApp (Baileys) <-> WebSocket para o canal WhatsApp do PicoClaw",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js",
+    "pair": "node index.js --pair"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
+    "qrcode-terminal": "^0.12.0",
+    "ws": "^8.18.0"
+  }
+}
