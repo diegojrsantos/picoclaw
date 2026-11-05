@@ -1,58 +1,83 @@
 #!/bin/sh
 set -eu
 
-CONFIG_DIR="${HOME:-/root}/.picoclaw"
+# PicoClaw v0.3.1 usa config "version 3": model_list + agents.defaults.model_name.
+# O binario do release NAO e o mesmo codigo do branch feat/agent-browser-tool.
+CONFIG_DIR="${PICOCLAW_HOME:-${HOME:-/root}/.picoclaw}"
 CONFIG="$CONFIG_DIR/config.json"
 PORT_FINAL="${PICOCLAW_GATEWAY_PORT:-${PORT:-8000}}"
 
-mkdir -p "$CONFIG_DIR/workspace"
-
-# O PicoClaw so aplica PICOCLAW_* via env.Parse QUANDO o config.json existe.
-# Rodamos onboard uma vez para materializar os templates do workspace.
-if [ ! -f "$CONFIG" ]; then
-  /app/picoclaw onboard </dev/null >/dev/null 2>&1 || true
-fi
-
-# As tags env dos providers usam "{{.Name}}", que a lib caarlos0/env NAO interpola.
-# Por isso a API key do LLM precisa entrar direto no JSON.
-json_escape() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
-
-PROVIDER="${PICOCLAW_LLM_PROVIDER:-openrouter}"
-case "$PROVIDER" in
-  openrouter|openai|anthropic|zhipu|gemini|groq|moonshot|nvidia|vllm|shengsuanyun) ;;
-  *) echo "PICOCLAW_LLM_PROVIDER invalido: $PROVIDER" >&2; exit 1 ;;
+case "$PORT_FINAL" in
+  ''|*[!0-9]*) PORT_FINAL=8000 ;;
 esac
 
+mkdir -p "$CONFIG_DIR/workspace"
+
+# O workspace ja vem materializado na imagem (onboard roda no build, nao no
+# boot) para nao atrasar o primeiro health check da Hostless.
+
+json_escape() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+
 KEY_JSON="$(json_escape "${PICOCLAW_LLM_API_KEY:-}")"
+# A API da NVIDIA exige o ID completo "nvidia/nemotron-3.5-bolt-e4b", mas o
+# normalizeModel() do PicoClaw remove o primeiro segmento "nvidia/". O prefixo
+# duplicado compensa esse strip e faz o request sair com o nome oficial.
+MODEL_JSON="$(json_escape "${PICOCLAW_MODEL:-nvidia/nvidia/nemotron-3.5-bolt-e4b}")"
+TOKEN_JSON="$(json_escape "${PICOCLAW_CHANNELS_TELEGRAM_TOKEN:-}")"
+ALLOW_JSON="$(json_escape "${PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM:-}")"
+
+# O canal so entra no config se o token existir (deploy sobe verde sem bot).
+if [ -n "$TOKEN_JSON" ]; then
+  if [ -n "$ALLOW_JSON" ]; then
+    ALLOW_ARR="[\"$ALLOW_JSON\"]"
+  else
+    ALLOW_ARR="[]"
+  fi
+  CHANNELS_BLOCK="\"channel_list\": { \"telegram\": { \"enabled\": true, \"type\": \"telegram\", \"allow_from\": $ALLOW_ARR, \"settings\": { \"token\": \"$TOKEN_JSON\" } } },"
+else
+  CHANNELS_BLOCK=""
+fi
 
 cat > "$CONFIG" <<EOF
 {
-  "providers": {
-    "$PROVIDER": {
-      "api_key": "$KEY_JSON"
+  "version": 3,
+  "agents": {
+    "defaults": {
+      "workspace": "$CONFIG_DIR/workspace",
+      "model_name": "nemotron-bolt",
+      "max_tokens": 4096,
+      "temperature": 1.0
     }
   },
+  "model_list": [
+    {
+      "model_name": "nemotron-bolt",
+      "provider": "nvidia",
+      "model": "$MODEL_JSON",
+      "api_keys": ["$KEY_JSON"],
+      "api_base": "https://integrate.api.nvidia.com/v1",
+      "enabled": true
+    }
+  ],
+  $CHANNELS_BLOCK
+  "heartbeat": { "enabled": false },
   "gateway": {
     "host": "0.0.0.0",
-    "port": $PORT_FINAL
-  },
-  "heartbeat": {
-    "enabled": false,
-    "interval": 30
+    "port": $PORT_FINAL,
+    "hot_reload": false,
+    "log_level": "info"
   }
 }
 EOF
 chmod 600 "$CONFIG"
 
-# Defaults derivados, pra reduzir o numero de variaveis no painel.
+# env.Parse aplica PICOCLAW_GATEWAY_HOST/PORT por cima do JSON.
+export PICOCLAW_GATEWAY_HOST=0.0.0.0
 export PICOCLAW_GATEWAY_PORT="$PORT_FINAL"
-export PICOCLAW_AGENTS_DEFAULTS_PROVIDER="${PICOCLAW_AGENTS_DEFAULTS_PROVIDER:-$PROVIDER}"
-export PICOCLAW_AGENTS_DEFAULTS_MODEL="${PICOCLAW_AGENTS_DEFAULTS_MODEL:-${PICOCLAW_MODEL:-openai/gpt-4o-mini}}"
 
-# Se o token do Telegram foi setado, liga o canal automaticamente.
-if [ -n "${PICOCLAW_CHANNELS_TELEGRAM_TOKEN:-}" ]; then
-  export PICOCLAW_CHANNELS_TELEGRAM_ENABLED=true
+if [ -z "${PICOCLAW_LLM_API_KEY:-}" ]; then
+  echo "AVISO: PICOCLAW_LLM_API_KEY nao definida. O /health sobe, mas as respostas do agente vao falhar." >&2
 fi
 
-echo "==> picoclaw gateway em 0.0.0.0:$PORT_FINAL | provider=$PROVIDER"
+echo "==> picoclaw gateway em 0.0.0.0:$PORT_FINAL | model=$MODEL_JSON"
 exec /app/picoclaw gateway
