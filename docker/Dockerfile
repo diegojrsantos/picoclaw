@@ -16,8 +16,9 @@ RUN wget -qO pc.tar.gz "https://github.com/sipeed/picoclaw/releases/download/${P
  && chmod +x /app/picoclaw \
  && test -x /app/picoclaw
 
-# Deixa o workspace embutido pronto na imagem. Rodar onboard no boot atrasaria
-# o primeiro health check; aqui nao ha limite de tempo de deploy.
+# Materializa o workspace na imagem (onboard no build, nao no boot, para nao
+# atrasar o health check). Este PICOCLAW_HOME vale so no BUILD: em runtime o
+# rootfs e read-only e o entrypoint reexporta PICOCLAW_HOME para /tmp.
 ENV PICOCLAW_HOME=/app/.picoclaw \
     PICOCLAW_GATEWAY_HOST=0.0.0.0
 RUN mkdir -p "$PICOCLAW_HOME/workspace" \
