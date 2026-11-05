@@ -1,34 +1,34 @@
-# ============================================================
-# Stage 1: Build the picoclaw binary
-# ============================================================
-FROM golang:1.25-alpine AS builder
+FROM debian:bookworm-slim
 
-RUN apk add --no-cache git make
+ARG PICOCLAW_VERSION=v0.3.1
 
-WORKDIR /src
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates wget \
+ && rm -rf /var/lib/apt/lists/*
 
-# Cache dependencies
-COPY go.mod go.sum ./
-RUN go mod download
+WORKDIR /app
 
-# Copy source and build
-COPY . .
-RUN make build
+# Tag fixa: o codigo do config (version 3) e o normalizeModel() desta versao
+# sao a base do entrypoint.sh. Um "latest" novo mudaria o formato sem aviso.
+RUN wget -qO pc.tar.gz "https://github.com/sipeed/picoclaw/releases/download/${PICOCLAW_VERSION}/picoclaw_Linux_x86_64.tar.gz" \
+ && tar xzf pc.tar.gz picoclaw \
+ && rm pc.tar.gz \
+ && chmod +x /app/picoclaw \
+ && test -x /app/picoclaw
 
-# ============================================================
-# Stage 2: Minimal runtime image
-# ============================================================
-FROM alpine:3.23
+# Deixa o workspace embutido pronto na imagem. Rodar onboard no boot atrasaria
+# o primeiro health check; aqui nao ha limite de tempo de deploy.
+ENV PICOCLAW_HOME=/app/.picoclaw \
+    PICOCLAW_GATEWAY_HOST=0.0.0.0
+RUN mkdir -p "$PICOCLAW_HOME/workspace" \
+ && (timeout 60 /app/picoclaw onboard </dev/null >/dev/null 2>&1 || true) \
+ && test -d "$PICOCLAW_HOME/workspace"
 
-RUN apk add --no-cache ca-certificates tzdata curl
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget -q --spider http://localhost:18790/health || exit 1
+# A Hostless injeta PORT=8000; o entrypoint repassa para PICOCLAW_GATEWAY_PORT.
 
-# Copy binary and first-run entrypoint (same as release image).
-COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
-COPY docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+EXPOSE 8000
 
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["/app/entrypoint.sh"]

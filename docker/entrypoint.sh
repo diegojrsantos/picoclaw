@@ -1,21 +1,83 @@
 #!/bin/sh
-set -e
+set -eu
 
-# First-run: neither config nor workspace exists.
-# If config.json is already mounted but workspace is missing we skip onboard to
-# avoid the interactive "Overwrite? (y/n)" prompt hanging in a non-TTY container.
-if [ ! -d "${HOME}/.picoclaw/workspace" ] && [ ! -f "${HOME}/.picoclaw/config.json" ]; then
-    picoclaw onboard
-    echo ""
-    echo "First-run setup complete."
-    echo "Edit ${HOME}/.picoclaw/config.json (add your API key, etc.) then restart the container."
-    exit 0
+# PicoClaw v0.3.1 usa config "version 3": model_list + agents.defaults.model_name.
+# O binario do release NAO e o mesmo codigo do branch feat/agent-browser-tool.
+CONFIG_DIR="${PICOCLAW_HOME:-${HOME:-/root}/.picoclaw}"
+CONFIG="$CONFIG_DIR/config.json"
+PORT_FINAL="${PICOCLAW_GATEWAY_PORT:-${PORT:-8000}}"
+
+case "$PORT_FINAL" in
+  ''|*[!0-9]*) PORT_FINAL=8000 ;;
+esac
+
+mkdir -p "$CONFIG_DIR/workspace"
+
+# O workspace ja vem materializado na imagem (onboard roda no build, nao no
+# boot) para nao atrasar o primeiro health check da Hostless.
+
+json_escape() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+
+KEY_JSON="$(json_escape "${PICOCLAW_LLM_API_KEY:-}")"
+# A API da NVIDIA exige o ID completo "nvidia/nemotron-3.5-bolt-e4b", mas o
+# normalizeModel() do PicoClaw remove o primeiro segmento "nvidia/". O prefixo
+# duplicado compensa esse strip e faz o request sair com o nome oficial.
+MODEL_JSON="$(json_escape "${PICOCLAW_MODEL:-nvidia/nvidia/nemotron-3.5-bolt-e4b}")"
+TOKEN_JSON="$(json_escape "${PICOCLAW_CHANNELS_TELEGRAM_TOKEN:-}")"
+ALLOW_JSON="$(json_escape "${PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM:-}")"
+
+# O canal so entra no config se o token existir (deploy sobe verde sem bot).
+if [ -n "$TOKEN_JSON" ]; then
+  if [ -n "$ALLOW_JSON" ]; then
+    ALLOW_ARR="[\"$ALLOW_JSON\"]"
+  else
+    ALLOW_ARR="[]"
+  fi
+  CHANNELS_BLOCK="\"channel_list\": { \"telegram\": { \"enabled\": true, \"type\": \"telegram\", \"allow_from\": $ALLOW_ARR, \"settings\": { \"token\": \"$TOKEN_JSON\" } } },"
+else
+  CHANNELS_BLOCK=""
 fi
 
-# Remove stale PID file from a previous container run.
-# After docker kill / OOM / crash the PID file may linger on the bind-mounted
-# volume and block the next gateway start (the recorded PID could collide with
-# an unrelated process inside the new container).
-rm -f "${HOME}/.picoclaw/.picoclaw.pid"
+cat > "$CONFIG" <<EOF
+{
+  "version": 3,
+  "agents": {
+    "defaults": {
+      "workspace": "$CONFIG_DIR/workspace",
+      "model_name": "nemotron-bolt",
+      "max_tokens": 4096,
+      "temperature": 1.0
+    }
+  },
+  "model_list": [
+    {
+      "model_name": "nemotron-bolt",
+      "provider": "nvidia",
+      "model": "$MODEL_JSON",
+      "api_keys": ["$KEY_JSON"],
+      "api_base": "https://integrate.api.nvidia.com/v1",
+      "enabled": true
+    }
+  ],
+  $CHANNELS_BLOCK
+  "heartbeat": { "enabled": false },
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": $PORT_FINAL,
+    "hot_reload": false,
+    "log_level": "info"
+  }
+}
+EOF
+chmod 600 "$CONFIG"
 
-exec picoclaw gateway "$@"
+# env.Parse aplica PICOCLAW_GATEWAY_HOST/PORT por cima do JSON.
+export PICOCLAW_GATEWAY_HOST=0.0.0.0
+export PICOCLAW_GATEWAY_PORT="$PORT_FINAL"
+
+if [ -z "${PICOCLAW_LLM_API_KEY:-}" ]; then
+  echo "AVISO: PICOCLAW_LLM_API_KEY nao definida. O /health sobe, mas as respostas do agente vao falhar." >&2
+fi
+
+echo "==> picoclaw gateway em 0.0.0.0:$PORT_FINAL | model=$MODEL_JSON"
+exec /app/picoclaw gateway
